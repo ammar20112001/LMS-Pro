@@ -47,14 +47,36 @@ export const fetchCourseItems = (courseId: number): Promise<Item[]> =>
 export const fetchDueSoon = (days = 14): Promise<Item[]> =>
   api.get("/api/items", { params: { due_within_days: days } }).then((r) => r.data);
 
+export interface Lecture {
+  id: number;
+  course_id: number;
+  week: number;
+  serial_no: number;
+  title: string;
+  has_video: boolean;
+  has_reading: boolean;
+}
+
+export interface CourseProgress {
+  course_id: number;
+  current_lecture_serial: number;
+  total_lectures: number;
+}
+
 export const fetchSyncRuns = (): Promise<SyncRun[]> =>
   api.get("/api/sync/runs").then((r) => r.data);
 
 export const triggerSync = (): Promise<void> =>
   api.post("/api/sync").then(() => {});
 
-export const markComplete = (id: number): Promise<Item> =>
-  api.post(`/api/items/${id}/complete`).then((r) => r.data);
+export const fetchLectures = (courseId: number): Promise<Lecture[]> =>
+  api.get(`/api/courses/${courseId}/lectures`).then((r) => r.data);
 
-export const markUncomplete = (id: number): Promise<Item> =>
-  api.post(`/api/items/${id}/uncomplete`).then((r) => r.data);
+export const fetchProgress = (courseId: number): Promise<CourseProgress> =>
+  api.get(`/api/courses/${courseId}/progress`).then((r) => r.data);
+
+export const setProgress = (courseId: number, serial: number): Promise<CourseProgress> =>
+  api.post(`/api/courses/${courseId}/progress?serial=${serial}`).then((r) => r.data);
+
+export const downloadFile = (itemId: number): string =>
+  `http://localhost:8000/api/items/${itemId}/file`;

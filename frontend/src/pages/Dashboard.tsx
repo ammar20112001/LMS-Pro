@@ -1,18 +1,19 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchDueSoon,
   fetchCourses,
   fetchSyncRuns,
   triggerSync,
-  markComplete,
-  markUncomplete,
-  Item,
+  Course,
 } from "../api/client";
 import { ItemCard } from "../components/ItemCard";
+import { CoursePage } from "./CoursePage";
 import { formatDistanceToNow, parseISO } from "date-fns";
 
 export function Dashboard() {
   const qc = useQueryClient();
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["due-soon"],
@@ -38,18 +39,16 @@ export function Dashboard() {
     },
   });
 
-  const toggleMut = useMutation({
-    mutationFn: (item: Item) =>
-      item.completed_at ? markUncomplete(item.id) : markComplete(item.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["due-soon"] }),
-  });
-
   const lastRun = runs[0];
   const lastSync = lastRun?.finished_at
     ? formatDistanceToNow(parseISO(lastRun.finished_at), { addSuffix: true })
     : "Never";
 
   const byKind = (kind: string) => items.filter((i) => i.kind === kind);
+
+  if (selectedCourse) {
+    return <CoursePage course={selectedCourse} onBack={() => setSelectedCourse(null)} />;
+  }
 
   return (
     <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
@@ -149,11 +148,7 @@ export function Dashboard() {
       )}
 
       {items.map((item) => (
-        <ItemCard
-          key={item.id}
-          item={item}
-          onToggleComplete={(i) => toggleMut.mutate(i)}
-        />
+        <ItemCard key={item.id} item={item} />
       ))}
 
       {/* Courses quick nav */}
@@ -166,12 +161,17 @@ export function Dashboard() {
             {courses.map((c) => (
               <div
                 key={c.id}
+                onClick={() => setSelectedCourse(c)}
                 style={{
                   background: "#fff",
                   border: "1px solid #e5e7eb",
                   borderRadius: 8,
                   padding: "10px 14px",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4f46e5")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")}
               >
                 <div style={{ fontWeight: 700, fontSize: 13, color: "#4f46e5" }}>{c.code}</div>
                 <div style={{ fontSize: 12, color: "#374151", marginTop: 2 }}>{c.title}</div>

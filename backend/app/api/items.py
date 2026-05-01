@@ -36,12 +36,18 @@ def list_items(
     db: Session = Depends(get_db),
 ):
     from datetime import timedelta
+    from sqlalchemy import or_
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(days=due_within_days)
     q = db.query(Item).filter(
-        Item.due_at >= now,
-        Item.due_at <= cutoff,
         Item.completed_at.is_(None),
+    ).filter(
+        or_(
+            # upcoming items within window
+            (Item.due_at >= now) & (Item.due_at <= cutoff),
+            # past-due but LMS still shows open
+            (Item.due_at < now) & (Item.status == "Open"),
+        )
     )
     if kind:
         q = q.filter(Item.kind == kind)
@@ -57,23 +63,44 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
     return _item_out(item)
 
 
-@router.post("/{item_id}/complete", response_model=ItemOut)
-def mark_complete(item_id: int, db: Session = Depends(get_db)):
+@router.get("/{item_id}/file")
+async def download_file(item_id: int, db: Session = Depends(get_db)):
+    from fastapi.responses import StreamingResponse
+    from ..scraper import VULMSScraper, CourseDTO
+    import io
+
     item = db.query(Item).get(item_id)
     if not item:
         raise HTTPException(404, "Item not found")
-    item.completed_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(item)
-    return _item_out(item)
+    if item.kind != "assignment":
+        raise HTTPException(400, "Only assignment files supported")
 
+    course = item.course
+    course_dto = CourseDTO(
+        index=course.lms_index,
+        ctl_id=course.ctl_id,
+        postback_target=course.postback_target,
+        code=course.code,
+        title=course.title,
+    )
 
-@router.post("/{item_id}/uncomplete", response_model=ItemOut)
-def mark_uncomplete(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(Item).get(item_id)
-    if not item:
-        raise HTTPException(404, "Item not found")
-    item.completed_at = None
-    db.commit()
-    db.refresh(item)
-    return _item_out(item)
+    scraper = VULMSScraper()
+    try:
+        await scraper.start(headless=True)
+        ok = await scraper.ensure_logged_in()
+        if not ok:
+            raise HTTPException(503, "Could not authenticate with LMS")
+
+        data, filename = await scraper.download_assignment_file(course_dto, item.lms_index)
+
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Download failed: {e}")
+    finally:
+        await scraper.stop()

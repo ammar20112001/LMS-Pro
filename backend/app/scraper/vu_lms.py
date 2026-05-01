@@ -68,6 +68,16 @@ class ItemDTO:
     file_url: str = ""
 
 
+@dataclass
+class LectureDTO:
+    week: int
+    lms_index: int
+    serial_no: int
+    title: str
+    has_video: bool = False
+    has_reading: bool = False
+
+
 class VULMSScraper:
     def __init__(self):
         self._browser: Optional[Browser] = None
@@ -276,6 +286,73 @@ class VULMSScraper:
         await self._page.goto(self._home_url, wait_until="networkidle", timeout=15000)
         await self._postback(course.postback_target)
 
+    async def list_lectures(self, course: CourseDTO) -> list[LectureDTO]:
+        await self._set_course_context(course)
+        html = await self._goto_section("CourseHome.aspx")
+        if not html:
+            return []
+        return self._parse_lectures(html)
+
+    @staticmethod
+    def _parse_lectures(html: str) -> list["LectureDTO"]:
+        entries = re.findall(
+            r'WeeklySchedule_rptIndex_(\d+)_lbtnViewLesson_(\d+)"[^>]*title="([^"]+)"',
+            html,
+        )
+        serials = {
+            (int(w), int(l)): int(s)
+            for w, l, s in re.findall(
+                r'WeeklySchedule_rptIndex_(\d+)_lblLessonSrNo_(\d+)">(\d+)', html
+            )
+        }
+        has_video = {
+            (int(w), int(l))
+            for w, l in re.findall(
+                r'WeeklySchedule_rptIndex_(\d+)_rptLessonTabIcon_(\d+)_icon_\d+" class="fa fa-film', html
+            )
+        }
+        has_reading = {
+            (int(w), int(l))
+            for w, l in re.findall(
+                r'WeeklySchedule_rptIndex_(\d+)_rptLessonTabIcon_(\d+)_icon_\d+" class="fa fa-book', html
+            )
+        }
+        lectures = []
+        for w, l, title in entries:
+            w, l = int(w), int(l)
+            lectures.append(LectureDTO(
+                week=w,
+                lms_index=l,
+                serial_no=serials.get((w, l), 0),
+                title=title.strip(),
+                has_video=(w, l) in has_video,
+                has_reading=(w, l) in has_reading,
+            ))
+        return sorted(lectures, key=lambda x: x.serial_no)
+
+    async def download_assignment_file(self, course: CourseDTO, lms_index: int) -> tuple[bytes, str]:
+        """Download assignment file via PostBack. Returns (bytes, filename)."""
+        await self._set_course_context(course)
+        await self._goto_section("Assignments/Assignments.aspx")
+
+        target = f"ctl00$MainContent$gvTileRepeaterAssignment$ctl{lms_index:02d}$lbtnViewAssignmentFile"
+        try:
+            async with self._page.expect_download(timeout=20000) as dl_info:
+                await self._page.evaluate(f"""
+                    document.getElementById('__EVENTTARGET').value = '{target}';
+                    document.getElementById('__EVENTARGUMENT').value = '';
+                    document.getElementById('ctl00').submit();
+                """)
+            download = await dl_info.value
+            path = await download.path()
+            with open(path, "rb") as f:
+                data = f.read()
+            filename = download.suggested_filename or "assignment_file"
+            return data, filename
+        except Exception as e:
+            log.warning("Failed to download assignment file: %s", e)
+            raise
+
     async def list_assignments(self, course: CourseDTO) -> list[ItemDTO]:
         await self._set_course_context(course)
         html = await self._goto_section("Assignments/Assignments.aspx")
@@ -318,7 +395,13 @@ class VULMSScraper:
             marks = self._span_val(html, f"{prefix}_lblTotalMarks_{idx}")
             lesson = self._span_val(html, f"{prefix}_lblPayableAmount_{idx}")
             expired = self._span_val(html, f"{prefix}_lblExpired_{idx}")
-            status = "Expired" if expired else "Open"
+            solution = re.search(rf'lbtnViewSolutionFile_{idx}', html)
+            if solution:
+                status = "Submitted"
+            elif expired:
+                status = "Expired"
+            else:
+                status = "Open"
 
             # File download link — the href on lbtnViewAssignmentFile
             file_url = ""

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from ..models import Course, Item, Notification, SyncRun, utcnow
-from ..scraper import VULMSScraper, CourseDTO, ItemDTO
+from ..scraper import VULMSScraper, CourseDTO, ItemDTO, LectureDTO
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +98,9 @@ async def _sync_course(
         added += a
         updated += u
 
+    lectures = await scraper.list_lectures(dto)
+    _sync_lectures(db, course, lectures)
+
     return added, updated
 
 
@@ -123,6 +126,12 @@ def _upsert_item(db: Session, course: Course, dto: ItemDTO) -> tuple[int, int]:
     item.file_url = dto.file_url
     item.last_seen_at = utcnow()
 
+    if dto.status == "Submitted" and not item.completed_at:
+        item.completed_at = utcnow()
+    elif dto.status != "Submitted" and item.completed_at and not is_new:
+        # Don't un-complete manually completed items unless we know for sure
+        pass
+
     new_hash = item.compute_hash()
     changed = item.content_hash != new_hash
     item.content_hash = new_hash
@@ -137,6 +146,22 @@ def _upsert_item(db: Session, course: Course, dto: ItemDTO) -> tuple[int, int]:
         return 0, 1
 
     return 0, 0
+
+
+def _sync_lectures(db: Session, course: Course, dtos: list) -> None:
+    from ..models import Lecture
+    existing = {(l.week, l.lms_index): l for l in course.lectures}
+    for dto in dtos:
+        key = (dto.week, dto.lms_index)
+        lec = existing.get(key)
+        if not lec:
+            lec = Lecture(course_id=course.id, week=dto.week, lms_index=dto.lms_index)
+            db.add(lec)
+        lec.serial_no = dto.serial_no
+        lec.title = dto.title
+        lec.has_video = dto.has_video
+        lec.has_reading = dto.has_reading
+    db.flush()
 
 
 def _schedule_notifications(db: Session, item: Item):

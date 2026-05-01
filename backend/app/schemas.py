@@ -35,6 +35,24 @@ class ItemOut(BaseModel):
         from_attributes = True
 
 
+class LectureOut(BaseModel):
+    id: int
+    course_id: int
+    week: int
+    serial_no: int
+    title: str
+    has_video: bool
+    has_reading: bool
+
+    class Config:
+        from_attributes = True
+
+
+class CourseProgressOut(BaseModel):
+    course_id: int
+    current_lecture_serial: int
+
+
 class SyncRunOut(BaseModel):
     id: int
     started_at: datetime

@@ -1,7 +1,7 @@
 import hashlib
 import json
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -23,6 +23,8 @@ class Course(Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     items: Mapped[list["Item"]] = relationship("Item", back_populates="course", cascade="all, delete-orphan")
+    lectures: Mapped[list["Lecture"]] = relationship("Lecture", back_populates="course", order_by="Lecture.serial_no")
+    progress: Mapped[list["CourseProgress"]] = relationship("CourseProgress", back_populates="course", uselist=False)
 
 
 class Item(Base):
@@ -56,6 +58,29 @@ class Item(Base):
     def compute_hash(self) -> str:
         payload = f"{self.title}|{self.due_at}|{self.opens_at}|{self.total_marks}|{self.status}"
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+class Lecture(Base):
+    __tablename__ = "lectures"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    week = Column(Integer, default=0)
+    lms_index = Column(Integer, default=0)
+    serial_no = Column(Integer, default=0)
+    title = Column(String, nullable=False)
+    has_video = Column(Boolean, default=False)
+    has_reading = Column(Boolean, default=False)
+
+    course = relationship("Course", back_populates="lectures")
+
+
+class CourseProgress(Base):
+    __tablename__ = "course_progress"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), unique=True, nullable=False)
+    current_lecture_serial = Column(Integer, default=0)
+
+    course = relationship("Course", back_populates="progress")
 
 
 class Notification(Base):

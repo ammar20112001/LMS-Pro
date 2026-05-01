@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Course, Item
-from ..schemas import CourseOut, ItemOut
+from ..schemas import CourseOut, ItemOut, LectureOut, CourseProgressOut
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -51,3 +51,31 @@ def course_items(course_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return [_item_out(i) for i in items]
+
+
+@router.get("/{course_id}/lectures", response_model=list[LectureOut])
+def list_lectures(course_id: int, db: Session = Depends(get_db)):
+    from ..models import Lecture
+    lectures = db.query(Lecture).filter_by(course_id=course_id).order_by(Lecture.serial_no).all()
+    return lectures
+
+
+@router.get("/{course_id}/progress")
+def get_progress(course_id: int, db: Session = Depends(get_db)):
+    from ..models import CourseProgress, Lecture
+    prog = db.query(CourseProgress).filter_by(course_id=course_id).first()
+    total = db.query(Lecture).filter_by(course_id=course_id).count()
+    current = prog.current_lecture_serial if prog else 0
+    return {"course_id": course_id, "current_lecture_serial": current, "total_lectures": total}
+
+
+@router.post("/{course_id}/progress")
+def set_progress(course_id: int, serial: int, db: Session = Depends(get_db)):
+    from ..models import CourseProgress
+    prog = db.query(CourseProgress).filter_by(course_id=course_id).first()
+    if not prog:
+        prog = CourseProgress(course_id=course_id)
+        db.add(prog)
+    prog.current_lecture_serial = serial
+    db.commit()
+    return {"course_id": course_id, "current_lecture_serial": serial}
