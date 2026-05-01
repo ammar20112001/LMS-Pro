@@ -1,1 +1,14 @@
 .env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+.lms-pro/
+*.db
+state.json

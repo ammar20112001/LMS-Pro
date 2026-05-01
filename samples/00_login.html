@@ -1,0 +1,627 @@
+<!DOCTYPE html><html lang="en"><!-- begin::Head --><head><meta http-equiv="origin-trial" content="A7vZI3v+Gz7JfuRolKNM4Aff6zaGuT7X0mf3wtoZTnKv6497cVMnhy03KDqX7kBz/q/iidW7srW31oQbBt4VhgoAAACUeyJvcmlnaW4iOiJodHRwczovL3d3dy5nb29nbGUuY29tOjQ0MyIsImZlYXR1cmUiOiJEaXNhYmxlVGhpcmRQYXJ0eVN0b3JhZ2VQYXJ0aXRpb25pbmczIiwiZXhwaXJ5IjoxNzU3OTgwODAwLCJpc1N1YmRvbWFpbiI6dHJ1ZSwiaXNUaGlyZFBhcnR5Ijp0cnVlfQ==">
+    <meta charset="utf-8">
+    <title>Learning Management System - Virtual University of Pakistan
+    </title>
+    <script type="text/javascript" async="" src="https://www.googletagmanager.com/gtag/js?id=G-R2WPTZXM1P&amp;cx=c&amp;_slc=1"></script><script async="" src="https://www.google-analytics.com/analytics.js"></script><script type="text/javascript" async="" charset="utf-8" src="https://www.gstatic.com/recaptcha/releases/gTpTIWhbKpxADzTzkcabhXN4/recaptcha__en.js" crossorigin="anonymous" integrity="sha384-H/5bR8BVxoDZIIp1lThXvsuAj/gHvImPQ0kayVpCevmOrRalo0FwJubK3EoX8w37"></script><script src="js/security-protection.js"></script>
+    <meta name="description" content="Latest updates and statistic charts">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="CSS/Login.css?Version=1.2" rel="stylesheet">
+    <link rel="shortcut icon" href="favicon.ico">    
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://www.google.com/recaptcha/api.js?render=6LdSLNUUAAAAAAcFN7NNNDEH-DdQ5GyZQDlhTYjn"></script>
+    <script type="text/javascript">
+        String.prototype.Trim = function () { return this.replace(/^\s+|\s+$/g, ''); }
+        $(document).ready(function () {
+            ResizeContentHeight();
+        });
+        $(window).on("resize", function () {
+            ResizeContentHeight();
+        });
+        function pageHeight() { return window.innerHeight != null ? window.innerHeight : document.documentElement && document.documentElement.clientHeight ? document.documentElement.clientHeight : document.body != null ? document.body.clientHeight : null; }
+        function ResizeContentHeight() {
+            var footerHeight;
+            var maincontainerHeight;
+            var maincontainer = document.getElementById('maincontainer');
+            var footer = document.getElementById('FooterContainer');
+            var Mobilefooter = document.getElementById('MobileFooterContainer');
+            var main_containerHeight = maincontainer.clientHeight;
+            var footer_containerHeight = document.getElementById('FooterContainer').clientHeight;
+            var Mobilefooter_containerHeight = document.getElementById('MobileFooterContainer').clientHeight;
+
+            if (window.getComputedStyle(footer).display === "block") {
+                footerHeight = footer_containerHeight - 50;
+            }
+            else if (window.getComputedStyle(Mobilefooter).display === "block") {
+                footerHeight = Mobilefooter_containerHeight;
+            }
+            var totalContentHeight = footerHeight + main_containerHeight;
+            if (pageHeight() > totalContentHeight) {
+                maincontainerHeight = pageHeight() - footerHeight;
+                maincontainer.style.height = maincontainerHeight + "px";
+            }
+
+        }
+        function ValidateFields() {
+            var retValue = true;
+            var ctrl1 = document.getElementById("txtStudentID");
+            var valid1 = document.getElementById("lblValidStudentID");
+
+            var ctrl2 = document.getElementById("txtPassword");
+            var valid2 = document.getElementById("lblValidPassword");
+
+            if (ctrl1.value == "") {
+                valid1.style.display = "block";
+                ctrl1.focus();
+                retValue = false;
+            }
+            else {
+                valid1.style.display = "none";
+
+                if (ctrl2.value == "") {
+                    valid2.style.display = "block";
+                    ctrl2.focus();
+                    retValue = false;
+                }
+                else {
+                    valid2.style.display = "none";
+                }
+            }
+            //alert(retValue);
+            return retValue;
+        }
+        function executeCaptcha() {
+            // do request for recaptcha token
+            // response is promise with passed token
+            grecaptcha.execute('6LdSLNUUAAAAAAcFN7NNNDEH-DdQ5GyZQDlhTYjn', { action: 'LMS20LandingPage' })
+                .then(function (token) {
+                    // add token value to form
+                    document.getElementById('g-recaptcha-response').value = token;
+                });
+        }
+        grecaptcha.ready(function () {
+            executeCaptcha();
+        });
+        
+        //Note: reCAPTCHA tokens expire after two minutes.
+        //https://developers.google.com/recaptcha/docs/v3#:~:text=Note%3A%20reCAPTCHA%20tokens%20expire%20after,want%20on%20the%20same%20page.
+        //Reset the google recaptcha after every two minutes (119 seconds just 1 second earlier)
+        setInterval(function () { executeCaptcha(); }, 119 * 1000);
+
+        function Close() {
+            document.getElementById("divError").style.display = "none";
+        }
+    </script>
+    
+	<style>
+        .blink_me {
+          animation: blinker 1s linear infinite;
+          color:red;
+          font-weight:bold;
+        }
+
+        @keyframes blinker {  
+          50% { opacity: 0; }
+        }
+
+        .urdu {
+            font-family: 'Jameel Noori Nastaleeq';
+            font-size: larger;
+        }
+        .english {
+            font-size: large;
+        }
+
+	    .custom-width {
+	        width: 90%;
+	       
+	    }
+
+        .img-white-shadow {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5); /* Adjust the shadow size and opacity */
+    border-radius: 8px; /* Optional: add rounded corners if needed */
+}
+
+    </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-mousewheel/3.1.13/jquery.mousewheel.min.js"></script><style type="text/css">span.im-caret {
+    -webkit-animation: 1s blink step-end infinite;
+    animation: 1s blink step-end infinite;
+}
+
+@keyframes blink {
+    from, to {
+        border-right-color: black;
+    }
+    50% {
+        border-right-color: transparent;
+    }
+}
+
+@-webkit-keyframes blink {
+    from, to {
+        border-right-color: black;
+    }
+    50% {
+        border-right-color: transparent;
+    }
+}
+
+span.im-static {
+    color: grey;
+}
+
+div.im-colormask {
+    display: inline-block;
+    border-style: inset;
+    border-width: 2px;
+    -webkit-appearance: textfield;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+div.im-colormask > input {
+    position: absolute;
+    display: inline-block;
+    background-color: transparent;
+    color: transparent;
+    -webkit-appearance: caret;
+    -moz-appearance: caret;
+    appearance: caret;
+    border-style: none;
+    left: 0; /*calculated*/
+}
+
+div.im-colormask > input:focus {
+    outline: none;
+}
+
+div.im-colormask > input::-moz-selection{
+    background: none;
+}
+
+div.im-colormask > input::selection{
+    background: none;
+}
+div.im-colormask > input::-moz-selection{
+    background: none;
+}
+
+div.im-colormask > div {
+    color: black;
+    display: inline-block;
+    width: 100px; /*calculated*/
+}</style><style type="text/css">/* Chart.js */
+@-webkit-keyframes chartjs-render-animation{from{opacity:0.99}to{opacity:1}}@keyframes chartjs-render-animation{from{opacity:0.99}to{opacity:1}}.chartjs-render-monitor{-webkit-animation:chartjs-render-animation 0.001s;animation:chartjs-render-animation 0.001s;}</style></head>
+<!-- end::Head -->
+<!-- start::Body -->
+<body class="m--skin- m-header--fixed m-header--fixed-mobile m-aside-left--enabled m-aside-left--skin-dark m-aside-left--offcanvas m-footer--push m-aside--offcanvas-default">
+    <!-- begin:: Page -->
+    <div id="maincontainer" class="m-grid m-grid--hor m-grid--root m-page ContainerHeight">
+        <div class="m-grid__item m-grid__item--fluid m-grid m-grid--ver-desktop m-grid--desktop m-grid--tablet-and-mobile m-grid--hor-tablet-and-mobile m-login m-login--1 m-login--signin" id="m_login">
+            <div class="m-grid__item m-grid__item--order-tablet-and-mobile-2 m-login__aside pt-s-0  ">
+                <div class="m-stack m-stack--hor m-stack--desktop">
+                    <form method="post" action="./" id="ctl00">
+<div class="aspNetHidden">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="F3UNQKShXBlnOoorWlqswDJyHrBmWvfJmUYlBK2nla4jEAC52381uku2sNKoDIYdIrUz8fLnb7r1EpLbzp/1110p2qY2Sfv7Tym4UCNPGf5O+0MLxWIDJ6rQl8XzFI+lU6QCgcAxs+a6lClaF0pv1MwsxmQ=">
+</div>
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="4C74136D">
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="AjQ2usk0hw/CU2oyiqh06Le5CftbN00TaxSdtXxyYREzOpjbYv+0j3KtKfvzWrQIVBdVWAkCdc1zP25BdfzLOALNxH4=">
+</div>
+                        <div class="m-stack__item m-stack__item--fluid">
+                            <div class="m-login__wrapper" style="padding-top: 10%;">
+                                <div class="m-login__logo">
+                                    <a href="#">
+                                        <img src="App_Themes/Default/Images/logos/Logo-New.png">
+                                    </a>
+                                </div>
+                                <div class="m-login__signin has-danger">
+                                    <div id="divError" class="m-alert m-alert--outline alert alert-danger alert-dismissible" role="alert" style="display: none">
+                                        <div class="row">
+                                            <div class="m--padding-right-30">
+                                                <span id="lblError">Incorrect username or password. Please try again.</span>
+                                            </div>
+                                            <div>
+                                                <button id="ClosePanel" type="button" class="close" data-dismiss="alert" aria-label="Close" onclick="Close()"></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="m-login__form m-form">
+                                        <div class="form-group">
+                                            <input name="txtStudentID" maxlength="12" id="txtStudentID" class="form-control m-input " type="text" placeholder="Student ID" autocomplete="off">
+                                            <div id="lblValidStudentID" class="form-control-feedback" style="display: none">Enter Student ID</div>
+                                        </div>
+                                        <div class="form-group">
+                                            <div class="input-group" id="show_hide_password">
+                                                <input name="txtPassword" type="password" id="txtPassword" class="form-control m-input " maxlength="15" placeholder="Password">
+                                                <div class="input-group-addon m--margin-top-10 ">
+                                                    <a href="#" class=" m-reset ">
+                                                        <i class="reset fa fa-eye border-0 " style="font-size: 20px;" aria-hidden="true"></i>
+                                                    </a>
+                                                </div>
+                                            </div>
+                                            <div id="lblValidPassword" class="form-control-feedback" style="display: none">
+                                                Enter Password
+                                            </div>
+
+                                            <div id="lblInvalidIp" class="form-control-feedback" style="display: none">                                               
+                                                Demo account can only be used from university premises and authorized locations.
+                                            </div>
+
+                                            <div class="input-group m--margin-top-20 row " style="margin-right: 2px !important; margin-left: 0px;">                                               
+                                                <div class="m--align-left col-xs-12 col-sm-8 col-md-7 col-lg-6 col-xl-6 pl-0">
+                                                    <a id="hpForgotPassword" class="m-link" href="ForgotPassword/ForgotPassword.aspx" target="_self">
+													         <span style="white-space: nowrap;">Forgot Password ?</span>
+                                                    </a>
+                                                    
+                                                </div>
+                                                 <div class="col-xs-12 col-sm-4 col-md-5 col-lg-6 col-xl-6 pr-0 custom_alignment">
+                                                    
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="m-login__form-action mt-4 mb-4">
+                                            <input type="submit" name="ibtnLogin" value="Sign In" onclick="return ValidateFields();" id="ibtnLogin" class="btn btn-primary m-btn m-btn--pill m-btn--custom m-btn--air">
+                                        </div>
+                                    </div>
+                                    <div class="text-left m--margin-top-60 custom-top-margin">
+                                    </div>
+                                    
+                                   
+                                    <div class="text-left m--margin-top-20 custom-top-margin">
+                                        <a href="/NoticeBoard/NoticeBoard2.aspx" target="_self" class="m-link">
+                                            <i class="fa fa-bell"></i>
+                                            Notice Board
+                                        </a>
+                                        
+                                    </div>
+                                    <div class="text-left m--margin-top-20">
+                                        <a class="m-link" href="http://handbook.vu.edu.pk" target="_blank">
+                                            <i class="fa fa-book"></i>
+                                            Student Hand Book
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="g-recaptcha-response" name="g-recaptcha-response" value="0cAFcWeA6W1Cug9lhJ5sdhpWh7sCsLW45yD2HhSUA9DsYFvhubJa3laOx6p_JzELgYqnhEaK2h2oIQTNNB40k9UUjdnUJuQmSR6PFtfFAMRAa8I5fJC2nWCjlYKYSzk_84hPSLNnHAgmx4a1PJdGhPxzadR0hUq0Jok6SY5k4aSV9DlamTl4DUrz_2ebYfnHkfQM3LKycbE1nA4RCZpzv-_3Wx5O2qXpihkxY6skr-2Ly_T7xxPqOfgGQpv6rfDz1RbM3aXJHDvDbelhxaezYwDJ8sxJmvl4lZeX7FoVfieWxX89V35dIeha-G0ipJRuWlIOFrPauOvCMZniQj5nxzPWWRhDlM9LcnPhpC9VPV8ytqIFIiwUFHM-R04wOiZdHwSi2uovRJ1d3QFZkEVF3t7W7xI9nQqs8og57TruXsb3Cm9oaIW61YiB1dWTwe0aB2YjCKvY8xugRsrMEwQ9hYeHJX7j6FKCfgZ7F_JlKlIOnkr8qfGzCQDOEyOOg5OByyr-2ZOPKTUJvb0Yrv5-O5RpsqaSYjSTM2Hunk-Ctpihrhvf2or0LHdg2TMyl6kgC07VwlQlWF5xIh1zvI1yqgYNqQg6yoK6S_Eea6Z06JD4_zRdO06BE0csKHxJLGPVePRNVatvG9LGkpYtjfWCb0BqBGy7LBsQZbtOZJwbygeo6J9orCRa2qeO2S9LLgESF_HRTLCkrzkcCtUIiVG55RbLHcvM1mCk93UzgU98a8vxeLpqTl7V6ql8SuH7upA5ZIzmOMGCWa1Tc4Wgk4kY54BDEW6NoIPE76vSsfGlxDY6ErY-v5zYZ90R7eg_g1SZ2Ar9ycDdxJBqn78jpLnc0ENM_OiTUrzdJ9PoKJI903GH44X0MROGo9-WmBtC_dZwsyvCPgG7GbAGo3oHxa8Eg_j1GbYGrM-3hG54bUXHTBdWK5dos43QJXd6pAJdAuxSyoEAQs2M__N5oPf4_JOsl0lUX7kr4f7xxcfpcHG2AeDkI9fOJTIKTU0SnfzL44kjoB1gYvxTavsD6a9OSlZ1PEbsS5V59YelUT25Qq885RyywfM3pt5aWQg_RnKJXiKTcSCLxL5LN2mr0k557QMJc5nnun1o2gZhyzRndTXOomlcGnqHgT2PbVWB1fHn1MDoP_loWGLiwEsRo6cFsWM1OUiZ_OTM5fZUfuS8Zp8XRXP8gU7LHXRrJq0W4PHZRYBILwMupQxyzR_xaPNzwtAclOOEsmVgYl52fpxPWUsrWs7l6ChCIkmjYdqqm-IX8TFzDbEFWQTM57dXNgT5_pSuJNtasAbqc7I3lxoyKh1gSDM2mCegML3iIz8QmyarFGBkyU-jNpLQlbRdy5ERqlhjZ740ScUnBr0VZ8MdmkuIj_CTTHGykSMCnZtjMAu2o_dJcwWKkpGGy8JC1JcY-tk5_MDX1ukk0WPj0LbGBCISbNTVew3rD_X75dtREfg13e_LRqRY1vPdZQrOCmzq4Lcp1gXgmyytSC3yITU9nDs_ytG_jLi82JCWUkAuLUXhQWelRGlLjvnv2fXhuyJ2Nz22lGSdMr3kU-8ZAZsl1JlWurvv3JvQxCV7tb35x_4HnBwDig0eBC7hKuX4-96lgrXDdYhIL5ivuLYRPs7phM0ITvGzf9Y5apiIbe4lgIbhI7b5zlyZFPNqqWR18ydDWMQBhlDVnlwMPvFCmBeHKvuxx14pr8RmBqjAeTdOV6kyKWgeKtkg5TrpWpbXfH1yyb0IAaO8IOM7m0msKLvnZIFWqfWsffd5oXKLhO19whJRno6iNYUbESGCLiv-DnEAC07XyZf9sDgcZhLW5WLcGCMnJWkY4UdMzM-kKHKSApitTV2Jd_BcnOM6TRSpgGSPIRNAYc5HDZ7jEwS1rr4wYN8cBehiGLkU5PxXhJjEISpRpj9y3tVAuuRvoZULiEPrptFJDdIjut5pdpt6QaQruUFQbcIAJf_rQ9ka-7_5YKcm2Coz_EQFs1h3nJkdgpLdYlyXz7OI_pKbDcYDxBwdoF8ZZYFvzucOyD8ff2oOQ">
+                        <input type="hidden" name="action" value="beta_LMS">                    
+                    </form>
+                </div>
+            </div>
+            <div class="m-grid__item m-grid__item--fluid m-grid m-grid--center m-grid--hor m-grid__item--order-tablet-and-mobile-1	m-login__content m_login_Container_bg showinFullView hideinMobileView">
+                <div class="m_login_Container_bgImg">
+                    <div class="m-grid__item m-grid__item--middle">
+                        <h3 class="m-login__welcome text-center text-shadow" style="padding-top: 8rem !important;">Learning Management System</h3>
+                        
+                            <div class="text-center">
+
+
+                            <span class="text-shadow" style="position: relative; left: 6%; right: 0%; top: 0px;">
+
+                                 
+
+                                
+                                 
+                                <br>
+
+                                <!-- Add a line break to move lblQuotes to the next line -->
+
+                                <img src="App_Themes/Default/Images/OpenQuote.gif" alt="" width="11" height="9" style="vertical-align: top; padding-bottom: 2px;">
+
+                                <span id="lblQuotes" style="color: white;" class="english">You can lead a man up to the university but you can't make him think.(Finley Peter Dunne)</span>
+                                
+
+                                <img src="App_Themes/Default/Images/CloseQuote.gif" alt="" width="11" height="9" style="vertical-align: top; padding-bottom: 2px;">
+
+                                <img id="quoteImage" src="App_Themes/Default/Images/refresh-icon.png" alt="Get Quote" height="40" style="vertical-align: top; padding-bottom: 8px;">
+                            </span>
+                            
+                        </div>
+
+                        <div class="hexagon" style="display: none">
+                            <div style="transform: translateX(-50%) translateY(-50%); position: absolute;">
+                                <i class="fa flaticon-confetti" style="font-size: 8.57rem;"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="m-stack m-stack--ver m-stack--desktop ShowinMobileView hideinFullView">
+                <!-- BEGIN: Brand -->
+                <div class="m-stack__item m-brand m_login_Container_bg">
+                    <div class="m_login_Container_bgImg">
+                        <div class="m-stack m-stack--ver m-stack--general">
+                            <div class=" d-none d-md-block m-stack__item m-stack__item--middle m-brand__logo">
+                                <a href="#" class="m-brand__logo-wrapper">
+                                    <img src="/App_Themes/Default/Images/logos/logo_default_dark.png">
+                                </a>
+                            </div>
+                            <div class="m-stack__item m-stack__item--middle m-brand__logo" style="width: 80%;">
+                                <h5 class="m-login__welcome text-center text-shadow" style="color: #fff; margin-top: 1.8rem;">Learning Management System
+                                </h5>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- END: Brand -->
+            </div>
+        </div>
+    </div>
+    <!-- end:: Page -->
+
+    <footer id="FooterContainer" class="m-grid__item m-footer ml-0 hideinMobileView">
+        <div class="m-container m-container--fluid m-container--full-height m-page__container">
+            <div class="  m-stack m-stack--flex-tablet-and-mobile m-stack--ver m-stack--desktop">
+                <div class=" m-stack__item m-stack__item--right m-stack__item--middle m-stack__item--first d-flex justify-content-between  ">
+                    <ul class="m-footer__nav m-nav m-nav--inline">
+                        <li class="m-nav__item m--padding-top-5  ">
+                            <a href="http://www.vu.edu.pk/" target="_blank" class="m-nav__link" style="padding-top: 1px; padding-bottom: 2px;">
+                                
+                                <img src="App_Themes/Default/Images/logos/logo-1.png" width="70" height="45" style="top: -4px;position: relative;">
+                            </a>
+                        </li>
+                        <li class="m-nav__item m--padding-top-5  ">
+                            <img src="App_Themes/Default/Images/logos/logo_govt_of_pakistan.png" width="50" height="45" style="top: -4px;position: relative;">
+                        </li>
+                        <li class="m-nav__item">
+                            <a href="http://www.vu.edu.pk/contact.aspx" target="_blank" class="m-link">
+                                <i class="m-nav__link-icon flaticon-support m--icon-font-size-lg3"></i>
+                                <span class="m-nav__link-text">Contacts Us
+                                </span>
+                            </a>
+                        </li>
+                        <li class="m-nav__item m-nav__item">
+                            <a href="https://www.vu.edu.pk/SupportSystem/" target="_blank" class="m-link">
+                                <i class="m-nav__link-icon flaticon-info m--icon-font-size-lg3"></i>
+                                &nbsp;
+                                    <span class="m-nav__link-text"><b>Help</b></span>
+                            </a>
+                        </li>
+                    </ul>
+                    <ul class="m-footer__nav m-nav m-nav--inline">
+                        <li class="m-nav__item m-nav__item d-flex align-items-center">
+                            <a href="http://www.vu.edu.pk/" target="_blank" class="m-nav__link" style="margin-top: 9px;">
+                                <span class="=m-nav__link-text">©&nbsp;2020 IT Department, Virtual University of Pakistan.
+                                </span>
+                            </a>
+                        </li>
+                    </ul>
+                    <ul class="m-footer__nav m-nav m-nav--inline">
+
+                        <li class="m-nav__item mt-1">
+                            <a href="https://www.facebook.com/VirtualUniversityOfPakistan" target="_blank" class="m-nav__link" style="padding-top: 2px; padding-bottom: 2px;">
+                                <i class="fa fa-facebook-official text-primary" style="font-size: 40px !important;"></i>
+                            </a>
+                        </li>
+                        <li class="m-nav__item mt-1">
+                            <a href="https://twitter.com/VUPakistan" target="_blank" class="m-nav__link" style="padding-top: 2px; padding-bottom: 2px;">
+                                
+                                <img src="App_Themes/Default/Images/twitter32.png" style="border-radius:2px; ">
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <footer id="MobileFooterContainer" class="m-grid__item	m-footer ml-0 ShowinMobileView hideinFullView ">
+        <div class="m-container m-container--fluid m-container--full-height m-page__container">
+            <div class="  m-stack m-stack--flex-tablet-and-mobile m-stack--ver m-stack--desktop">
+                <div class=" m-stack__item m-stack__item--right m-stack__item--middle m-stack__item--first d-flex justify-content-between  ">
+                    <div class="row m-nav" style="width:100%;">                       
+                        <ul class="m-footer__nav m-nav m-nav--inline">
+                            <li class="m-nav__item  m--padding-top-5">
+                                <a href="http://www.vu.edu.pk/" target="_blank" class="m-nav__link" style="padding-top: 0.5px;">
+                                    
+                                    <img src="App_Themes/Default/Images/logos/logo-1.png" width="70" height="45" style="top: -4px;position: relative;">
+                                </a>
+                            </li>
+                            <li class="m-nav__item m--padding-top-5  ">
+                                <img src="App_Themes/Default/Images/logos/logo_govt_of_pakistan.png" width="50" height="45" style="top: -4px;position: relative;">
+                            </li>
+                            <li class="m-nav__item mt-1">
+                                <a href="https://www.facebook.com/VirtualUniversityOfPakistan" target="_blank" class="m-nav__link" style="padding-bottom: 2px;">
+                                    <i class=" fa fa-facebook-official text-primary" style="font-size: 53px !important;top: -14px;position: relative;"></i>
+                                </a>
+                            </li>
+                            <li class="m-nav__item mt-1">
+                                <a href="https://twitter.com/VUPakistan" target="_blank" class="m-nav__link" style=" padding-bottom: 2px;">
+                                    
+                                    <img src="App_Themes/Default/Images/twitter32.png" style="border-radius:2px;height: 47px;position: relative;top: -11px; ">
+                                </a>
+                            </li>
+
+                         
+                        </ul>    
+                        
+                        <ul class="m-footer__nav m-nav m-nav--inline">
+                            <li class="m-nav__item mt-1">
+                                <a href="http://www.vu.edu.pk/contact.aspx" target="_blank" class="m-link">
+                                    <i class="m-nav__link-icon flaticon-support m--icon-font-size-lg2"></i>
+                                    <span class="m-nav__link-text" style="font-size:12px;">Contacts Us
+                                    </span>
+                                </a>
+                            </li>
+                            <li class="m-nav__item mt-1">
+                                <a href="https://www.vu.edu.pk/SupportSystem/" target="_blank" class="m-link ml-2">
+                                    <i class="m-nav__link-icon flaticon-info m--icon-font-size-lg2"></i>
+                                    <span class="m-nav__link-text" style="font-size:12px;"><b>Help</b></span>
+                                </a>
+                            </li>
+                        </ul>                   
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script type="text/javascript">
+        //Google Analytics Code - Start
+        (function (i, s, o, g, r, a, m) {
+            i['GoogleAnalyticsObject'] = r; i[r] = i[r] || function () {
+                (i[r].q = i[r].q || []).push(arguments)
+            }, i[r].l = 1 * new Date(); a = s.createElement(o),
+                m = s.getElementsByTagName(o)[0]; a.async = 1; a.src = g; m.parentNode.insertBefore(a, m)
+        })(window, document, 'script', 'https://www.google-analytics.com/analytics.js', 'ga');
+
+        ga('create', 'UA-27570524-1', 'auto');
+        ga('send', 'pageview');
+        //Google Analytics Code - End
+    </script>
+    <script>
+        $(document).ready(function () {
+            $("#hpKeepMeLogin").on('click', function (event) { $('#cbKeepMeLogin').bootstrapToggle("toggle"); });
+            $("#show_hide_password a").on('click', function (event) {
+                event.preventDefault();
+                if ($('#show_hide_password input').attr("type") == "password") {
+                    $('#show_hide_password input').attr('type', 'text');
+                    $('#show_hide_password i').addClass("fa-eye-slash");
+                    $('#show_hide_password i').removeClass("fa-eye");
+
+                }
+                else if ($('#show_hide_password input').attr("type") == "text") {
+                    $('#show_hide_password input').attr('type', 'password');
+                    $('#show_hide_password i').removeClass("fa-eye-slash");
+                    $('#show_hide_password i').addClass("fa-eye");
+                }
+            });
+        });
+        $(".switch").find("input").on("click", function () {
+            $("#cbKeepMeLogin").click();
+        });
+    </script>
+
+    <link rel="stylesheet" href="App_Themes/Default/vendors.bundle.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="App_Themes/Default/vendors.bundle.css">
+    </noscript>
+
+   
+        
+    <script defer="" src="App_Themes/Default/vendors.bundle.js"></script>
+    <script defer="" src="App_Themes/Default/bootstrap-notify.js"></script>
+    <script defer="" src="App_Themes/Default/scripts.bundle.js"></script>
+
+    <script>
+
+    
+        // Function to call SetRandomQuote web method and update the quote
+        function fetchAndDisplayQuote() {
+            $.ajax({
+                type: "POST",
+                url: "LMS_LP.aspx/SetRandomQuote",
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                success: function (response) {
+                    var result = JSON.parse(response.d);
+                    var quote = result.quote;
+                    var language = result.language;
+
+                    if (quote) {
+                        $("#lblQuotes").text(quote).show().css("color", "white");
+
+                        if (language === "English") {
+                            $("#lblQuotes").addClass("english").removeClass("urdu");
+                        } else if (language === "Urdu") {
+                            $("#lblQuotes").addClass("urdu").removeClass("english");
+                        }
+                    } else {
+                        $("#lblQuotes").hide().text("");
+                    }
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        // Call the function on page load
+        fetchAndDisplayQuote();
+
+        // Bind the function to the image click event
+        $("#quoteImage").on("click", function () {
+            fetchAndDisplayQuote();
+        });
+
+
+
+
+
+        $(document).ready(function () {
+            var ImageSrc = $("#quoteImage").attr("src"); 
+            var loadingImageSrc = "App_Themes/Default/Images/refresh-icon.gif"; 
+            //var delayTime = 500;
+          
+            function fetchAndDisplayQuote() {
+                // Change the image source to the loading image
+                $("#quoteImage").attr("src", loadingImageSrc);
+
+                $.ajax({
+                    type: "POST",
+                    url: "LMS_LP.aspx/SetRandomQuote",
+                    contentType: "application/json; charset=utf-8",
+                    dataType: "json",
+                    success: function (response) {
+                        var result = JSON.parse(response.d);
+                        var quote = result.quote;
+                        var language = result.language;
+                        var Id = result.Id;
+
+                        if (quote) {
+
+                            //$("#lblId").text(Id).show().css("color", "white");
+                            $("#lblQuotes").text(quote).show().css("color", "white");
+
+                            if (language === "English") {
+                                $("#lblQuotes").addClass("english").removeClass("urdu");
+                            } else if (language === "Urdu") {
+                                $("#lblQuotes").addClass("urdu").removeClass("english");
+                            }
+                        } else {
+                            $("#lblQuotes").hide().text("");
+                        }
+
+                        $("#quoteImage").attr("src", ImageSrc);
+
+                        // Introduce a delay before reverting the image back to the original image in case of error
+                        //setTimeout(function () {
+                        //    $("#quoteImage").attr("src", ImageSrc);
+                        //}, delayTime);
+
+                    },
+                    error: function (error) {
+                        console.error(error);
+
+                        // Introduce a delay before reverting the image back to the original image in case of error
+                        //setTimeout(function () {
+                        //    $("#quoteImage").attr("src", ImageSrc);
+                        //}, delayTime);
+
+
+
+                        $("#quoteImage").attr("src", ImageSrc);
+                    }
+                });
+            }
+
+
+            //quotes removed temporarily
+            // Call the function on page load
+            //fetchAndDisplayQuote();
+
+            // Bind the function to the image click event
+            //$("#quoteImage").on("click", function () {
+            //    fetchAndDisplayQuote();
+            //});
+        });
+
+    </script>
+
+
+
+<div><div class="grecaptcha-badge" data-style="bottomright" style="width: 256px; height: 60px; display: block; transition: right 0.3s; position: fixed; bottom: 14px; right: -186px; box-shadow: gray 0px 0px 5px; border-radius: 2px; overflow: hidden;"><div class="grecaptcha-logo"><iframe title="reCAPTCHA" width="256" height="60" role="presentation" name="a-au3z18qrqygv" frameborder="0" scrolling="no" sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=6LdSLNUUAAAAAAcFN7NNNDEH-DdQ5GyZQDlhTYjn&amp;co=aHR0cHM6Ly92dWxtcy52dS5lZHUucGs6NDQz&amp;hl=en&amp;v=gTpTIWhbKpxADzTzkcabhXN4&amp;size=invisible&amp;anchor-ms=20000&amp;execute-ms=30000&amp;cb=xrhv7lp6rnnn"></iframe></div><div class="grecaptcha-error"></div><textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response" style="width: 250px; height: 40px; border: 1px solid rgb(193, 193, 193); margin: 10px 25px; padding: 0px; resize: none; display: none;"></textarea></div><iframe style="display: none;"></iframe></div></body><!-- end::Body --></html>

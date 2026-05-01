@@ -1,0 +1,51 @@
+{
+  "login_url": "https://vulms.vu.edu.pk/",
+  "post_login_url": "https://vulms.vu.edu.pk/Home.aspx?id=36805266-887e-48c7-b47f-a433de01560b",
+  "courses": [],
+  "all_links_on_final_page": [
+    {
+      "text": "",
+      "href": "https://vulms.vu.edu.pk/NoticeBoard/NoticeBoard.aspx"
+    },
+    {
+      "text": "AMMAR JAWED",
+      "href": "https://vulms.vu.edu.pk/Home.aspx?id=36805266-887e-48c7-b47f-a433de01560b#"
+    },
+    {
+      "text": "Computer Science",
+      "href": "https://vulms.vu.edu.pk/Home.aspx?id=36805266-887e-48c7-b47f-a433de01560b#"
+    },
+    {
+      "text": "My Profile",
+      "href": "https://vulms.vu.edu.pk/Profile/StudentProfile.aspx"
+    },
+    {
+      "text": "Change Password",
+      "href": "https://vulms.vu.edu.pk/Settings/ChangePassword.aspx"
+    },
+    {
+      "text": "My Logins History",
+      "href": "https://vulms.vu.edu.pk/Settings/MyLogins.aspx"
+    },
+    {
+      "text": "Mail",
+      "href": "https://gmail.vu.edu.pk/"
+    },
+    {
+      "text": "e-ID Card",
+      "href": "https://vulms.vu.edu.pk/StudentServices/Registrar%20Office/PrintStudentECardView.aspx"
+    },
+    {
+      "text": "Contact Us",
+      "href": "http://www.vu.edu.pk/contact.aspx"
+    },
+    {
+      "text": "Help",
+      "href": "https://www.vu.edu.pk/SupportSystem/"
+    },
+    {
+      "text": "Virtual University Of Pakistan\n                                            \n                                            \n                                                Federal Government University",
+      "href": "https://www.vu.edu.pk/"
+    }
+  ]
+}
