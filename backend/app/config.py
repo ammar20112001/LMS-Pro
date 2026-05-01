@@ -15,6 +15,7 @@ class Settings:
     # Storage
     data_dir: Path = Path.home() / ".lms-pro"
     state_file: Path = Path.home() / ".lms-pro" / "state.json"
+    files_dir: Path = Path.home() / ".lms-pro" / "files"
 
     # Email
     notify_email: str = _env.get("notify_email", "")
@@ -30,6 +31,7 @@ class Settings:
 
     def __init__(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.files_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

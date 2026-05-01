@@ -3,6 +3,7 @@ Sync job: scrape VU LMS → diff → write to DB → schedule notifications.
 Runs every 30 minutes via APScheduler.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,8 @@ from ..scraper import VULMSScraper, CourseDTO, ItemDTO, LectureDTO
 
 log = logging.getLogger(__name__)
 
+_sync_lock = asyncio.Lock()
+
 NOTIFICATION_WINDOWS = [
     ("deadline_72h", timedelta(hours=72)),
     ("deadline_24h", timedelta(hours=24)),
@@ -22,7 +25,16 @@ NOTIFICATION_WINDOWS = [
 
 
 async def run_sync():
-    """Entry point called by APScheduler."""
+    """Entry point called by APScheduler. Skips if another sync is already running."""
+    if _sync_lock.locked():
+        log.info("Sync already in progress — skipping")
+        return
+
+    async with _sync_lock:
+        await _do_sync()
+
+
+async def _do_sync():
     db = SessionLocal()
     run = SyncRun()
     db.add(run)
@@ -61,6 +73,7 @@ async def run_sync():
     finally:
         await scraper.stop()
         db.close()
+
 
 
 def _finish_run(db: Session, run: SyncRun, status: str, error: str = None):

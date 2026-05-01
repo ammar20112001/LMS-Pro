@@ -1,5 +1,6 @@
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { Item } from "../api/client";
+import { FileViewer } from "./FileViewer";
 
 interface Props {
   item: Item;
@@ -100,24 +101,7 @@ export function ItemCard({ item }: Props) {
           {item.total_marks && (
             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{item.total_marks} marks</div>
           )}
-          {hasFile && !isSubmitted && (
-            <a
-              href={`http://localhost:8000/api/items/${item.id}/file`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-block",
-                marginTop: 8,
-                fontSize: 11, fontWeight: 600,
-                color: "#4f46e5",
-                background: "#ede9fe",
-                padding: "3px 10px", borderRadius: 4,
-                textDecoration: "none",
-              }}
-            >
-              ↓ View File
-            </a>
-          )}
+          {hasFile && !isSubmitted && <FileViewer item={item} />}
         </div>
       </div>
     </div>

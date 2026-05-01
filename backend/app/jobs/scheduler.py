@@ -31,7 +31,8 @@ def start():
         id="lms_sync",
         name="LMS Sync",
         replace_existing=True,
-        misfire_grace_time=300,
+        misfire_grace_time=None,
+        coalesce=True,
     )
 
     _scheduler.add_job(
