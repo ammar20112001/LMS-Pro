@@ -41,6 +41,9 @@ export interface SyncRun {
 export const fetchCourses = (): Promise<Course[]> =>
   api.get("/api/courses").then((r) => r.data);
 
+export const fetchItems = (): Promise<Item[]> =>
+  api.get("/api/items").then((r) => r.data);
+
 export const fetchCourseItems = (courseId: number): Promise<Item[]> =>
   api.get(`/api/courses/${courseId}/items`).then((r) => r.data);
 
