@@ -19,30 +19,26 @@ def fetch_transcript(youtube_id: str) -> tuple[str, str]:
     Returns (transcript_text, source) where source = "youtube_auto".
     Raises TranscriptUnavailable if no transcript exists.
     """
-    from youtube_transcript_api import (
-        YouTubeTranscriptApi,
-        NoTranscriptFound,
-        TranscriptsDisabled,
-        VideoUnavailable,
-    )
+    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 
     try:
-        # Try English first, then Urdu, then whatever is available
-        try:
-            segments = YouTubeTranscriptApi.get_transcript(youtube_id, languages=["en"])
-        except NoTranscriptFound:
-            # Fall back to any available language (Urdu auto-captions, etc.)
-            transcript_list = YouTubeTranscriptApi.list_transcripts(youtube_id)
-            transcript = transcript_list.find_generated_transcript(
-                ["en", "ur", "en-US", "en-GB"]
-            )
-            segments = transcript.fetch()
+        api = YouTubeTranscriptApi()
+        transcript_list = api.list(youtube_id)
 
-        text = " ".join(seg["text"].strip() for seg in segments if seg["text"].strip())
+        # Try English first, then any generated language (Urdu/Hindi auto-captions)
+        try:
+            transcript = transcript_list.find_transcript(["en", "en-US", "en-GB"])
+        except NoTranscriptFound:
+            transcript = transcript_list.find_generated_transcript(
+                ["en", "ur", "hi", "en-US", "en-GB"]
+            )
+
+        fetched = transcript.fetch()
+        text = " ".join(s.text.strip() for s in fetched.snippets if s.text.strip())
         log.info("Fetched transcript for %s: %d chars", youtube_id, len(text))
         return text, "youtube_auto"
 
-    except (NoTranscriptFound, TranscriptsDisabled, VideoUnavailable) as e:
+    except (NoTranscriptFound, TranscriptsDisabled) as e:
         raise TranscriptUnavailable(f"No transcript for {youtube_id}: {e}") from e
     except Exception as e:
         raise TranscriptUnavailable(f"Transcript fetch failed for {youtube_id}: {e}") from e
@@ -51,53 +47,33 @@ def fetch_transcript(youtube_id: str) -> tuple[str, str]:
 def assess_quality(transcript: str) -> str:
     """
     Heuristic quality check. Returns "ok" or "poor".
-
-    Poor signals:
-    - Very short (< 300 words) — likely noise-only captions
-    - High ratio of [Music] / [Applause] noise tags
-    - Urdu captions that YouTube rendered as garbage English phonetics
+    Poor: < 300 words, or high ratio of noise tags like [Music].
     """
     words = transcript.split()
-    word_count = len(words)
-
-    if word_count < 300:
+    if len(words) < 300:
         return "poor"
 
-    # Count YouTube noise tags like [Music], [Applause], [Laughter]
     noise_tags = len(re.findall(r"\[(?:Music|Applause|Laughter|Inaudible|__)\]", transcript, re.IGNORECASE))
-    noise_ratio = noise_tags / max(word_count, 1)
-    if noise_ratio > 0.05:
+    if noise_tags / max(len(words), 1) > 0.05:
         return "poor"
 
     return "ok"
 
 
 def transcribe_with_whisper(youtube_id: str) -> tuple[str, str]:
-    """
-    Fallback: download audio via yt-dlp then transcribe with faster-whisper.
-    Only activated when YouTube auto-transcript quality is "poor".
-    Requires: pip install faster-whisper yt-dlp
-    """
+    """Fallback: download audio via yt-dlp then transcribe with faster-whisper."""
     import tempfile, subprocess
     from pathlib import Path
     from faster_whisper import WhisperModel
 
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = Path(tmpdir) / "audio.mp3"
-
-        log.info("Downloading audio for %s via yt-dlp…", youtube_id)
         subprocess.run([
-            "yt-dlp",
-            "-f", "bestaudio",
-            "-x", "--audio-format", "mp3",
-            "-o", str(audio_path),
-            f"https://www.youtube.com/watch?v={youtube_id}",
+            "yt-dlp", "-f", "bestaudio", "-x", "--audio-format", "mp3",
+            "-o", str(audio_path), f"https://www.youtube.com/watch?v={youtube_id}",
         ], check=True, capture_output=True)
 
-        log.info("Transcribing with faster-whisper (medium model)…")
         model = WhisperModel("medium", device="cpu", compute_type="int8")
         segments, _ = model.transcribe(str(audio_path), language=None)
         text = " ".join(seg.text.strip() for seg in segments)
-
-        log.info("Whisper transcript: %d chars", len(text))
         return text, "whisper_local"

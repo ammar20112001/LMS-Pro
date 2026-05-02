@@ -16,17 +16,17 @@ class AIClient(ABC):
 
 class GeminiClient(AIClient):
     def __init__(self, api_key: str):
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=None,
-        )
-        self._genai = genai
+        import google.genai as genai
+        self._client = genai.Client(api_key=api_key)
+        self._model = "gemini-2.0-flash"
 
     async def complete(self, system: str, user: str) -> str:
-        prompt = f"{system}\n\n{user}"
-        response = self._model.generate_content(prompt)
+        from google.genai import types
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=f"{system}\n\n{user}",
+            config=types.GenerateContentConfig(max_output_tokens=8192),
+        )
         return response.text
 
 
@@ -38,7 +38,7 @@ class AnthropicClient(AIClient):
     async def complete(self, system: str, user: str) -> str:
         msg = self._client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=4096,
+            max_tokens=8192,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
