@@ -6,6 +6,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from ..config import settings
 from .notify_job import run_notify, run_digest
+from .notes_job import run_notes_job
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ def _run_sync_wrapper():
         asyncio.run(run_sync())
     except Exception as e:
         log.exception("Sync job crashed: %s", e)
+
+
+def _run_notes_wrapper():
+    """Bridge async notes job into the sync APScheduler context."""
+    try:
+        asyncio.run(run_notes_job())
+    except Exception as e:
+        log.exception("Notes job crashed: %s", e)
 
 
 def start():
@@ -51,11 +60,21 @@ def start():
         replace_existing=True,
     )
 
+    _scheduler.add_job(
+        _run_notes_wrapper,
+        trigger=IntervalTrigger(minutes=settings.notes_interval_minutes),
+        id="notes_gen",
+        name="Notes Generator",
+        replace_existing=True,
+        coalesce=True,
+    )
+
     _scheduler.start()
     log.info(
-        "Scheduler started — sync every %d min, notify every 5 min, digest at %d:00",
+        "Scheduler started — sync every %d min, notify every 5 min, digest at %d:00, notes every %d min",
         settings.sync_interval_minutes,
         settings.digest_hour_local,
+        settings.notes_interval_minutes,
     )
 
 

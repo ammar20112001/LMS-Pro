@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Course, Item
-from ..schemas import CourseOut, ItemOut, LectureOut, CourseProgressOut
+from ..models import Course, Item, Lecture
+from ..schemas import CourseOut, ItemOut, LectureOut, CourseProgressOut, LectureNotesOut
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -79,3 +79,63 @@ def set_progress(course_id: int, serial: int, db: Session = Depends(get_db)):
     prog.current_lecture_serial = serial
     db.commit()
     return {"course_id": course_id, "current_lecture_serial": serial}
+
+
+@router.get("/{course_id}/lectures/{lecture_id}/notes", response_model=LectureNotesOut)
+def get_lecture_notes(course_id: int, lecture_id: int, db: Session = Depends(get_db)):
+    lec = db.query(Lecture).filter_by(id=lecture_id, course_id=course_id).first()
+    if not lec:
+        raise HTTPException(404, "Lecture not found")
+    return LectureNotesOut(
+        lecture_id=lec.id,
+        notes_status=lec.notes_status,
+        notes_md=lec.notes_md,
+        transcript_quality=lec.transcript_quality,
+        transcript_source=lec.transcript_source,
+        notes_generated_at=lec.notes_generated_at,
+        youtube_id=lec.youtube_id,
+    )
+
+
+notes_router = APIRouter(prefix="/api/notes", tags=["notes"])
+
+
+@notes_router.post("/run")
+async def trigger_notes(lecture_id: int):
+    from ..jobs.notes_job import run_notes_for_lecture
+    result = await run_notes_for_lecture(lecture_id)
+    return result
+
+
+@notes_router.get("/queue")
+def notes_queue(db: Session = Depends(get_db)):
+    pending = (
+        db.query(Lecture)
+        .filter(Lecture.has_video.is_(True))
+        .filter(Lecture.youtube_id.isnot(None))
+        .filter(Lecture.notes_status == "pending")
+        .order_by(Lecture.serial_no)
+        .all()
+    )
+    return [
+        {
+            "lecture_id": l.id,
+            "course_id": l.course_id,
+            "serial_no": l.serial_no,
+            "title": l.title,
+            "youtube_id": l.youtube_id,
+        }
+        for l in pending
+    ]
+
+
+@notes_router.get("/status")
+def notes_status(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    rows = (
+        db.query(Lecture.notes_status, func.count(Lecture.id))
+        .filter(Lecture.has_video.is_(True))
+        .group_by(Lecture.notes_status)
+        .all()
+    )
+    return {status: count for status, count in rows}

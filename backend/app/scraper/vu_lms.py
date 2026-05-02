@@ -293,6 +293,48 @@ class VULMSScraper:
             return []
         return self._parse_lectures(html)
 
+    async def get_lecture_youtube_id(
+        self, course: CourseDTO, week: int, lms_index: int
+    ) -> str | None:
+        """
+        Click a specific lecture link and extract the YouTube video ID from the
+        resulting iframe. Returns None if no YouTube embed is found.
+        """
+        await self._set_course_context(course)
+        await self._goto_section("CourseHome.aspx")
+
+        # Click the lecture view button to load the video panel
+        btn_id = f"WeeklySchedule_rptIndex_{week}_lbtnViewLesson_{lms_index}"
+        try:
+            await self._page.click(f"#{btn_id}", timeout=8000)
+            await self._page.wait_for_timeout(2000)
+        except Exception:
+            # Try postback approach
+            target = f"ctl00$mainContent$WeeklySchedule$rptIndex${week}$lbtnViewLesson${lms_index}"
+            await self._postback(target)
+
+        html = await self._page.content()
+        return self._extract_youtube_id(html)
+
+    @staticmethod
+    def _extract_youtube_id(html: str) -> str | None:
+        """
+        Extract YouTube video ID from page HTML.
+        Handles embed URLs, watch URLs, and youtu.be short links.
+        """
+        patterns = [
+            r'youtube\.com/embed/([A-Za-z0-9_-]{11})',
+            r'youtube\.com/watch\?v=([A-Za-z0-9_-]{11})',
+            r'youtu\.be/([A-Za-z0-9_-]{11})',
+            r'"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"',
+        ]
+        import re
+        for pat in patterns:
+            m = re.search(pat, html)
+            if m:
+                return m.group(1)
+        return None
+
     @staticmethod
     def _parse_lectures(html: str) -> list["LectureDTO"]:
         entries = re.findall(

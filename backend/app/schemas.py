@@ -43,6 +43,23 @@ class LectureOut(BaseModel):
     title: str
     has_video: bool
     has_reading: bool
+    youtube_id: Optional[str] = None
+    notes_status: str = "pending"
+    transcript_quality: Optional[str] = None
+    notes_generated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class LectureNotesOut(BaseModel):
+    id: int
+    title: str
+    notes_md: Optional[str] = None
+    notes_status: str
+    transcript_quality: Optional[str] = None
+    transcript_source: Optional[str] = None
+    notes_generated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

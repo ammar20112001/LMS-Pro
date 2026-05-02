@@ -29,6 +29,15 @@ class Settings:
     sync_interval_minutes: int = int(_env.get("sync_interval_minutes", "30"))
     digest_hour_local: int = int(_env.get("digest_hour_local", "7"))
 
+    # AI — Phase 2
+    ai_provider: str = _env.get("AI_PROVIDER", "gemini")
+    gemini_api_key: str = _env.get("GEMINI_API_KEY", "")
+    anthropic_api_key: str = _env.get("ANTHROPIC_API_KEY", "")
+    obsidian_vault_path: str = _env.get("OBSIDIAN_VAULT_PATH", "")
+
+    # Notes job
+    notes_interval_minutes: int = int(_env.get("notes_interval_minutes", "10"))
+
     def __init__(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.files_dir.mkdir(parents=True, exist_ok=True)

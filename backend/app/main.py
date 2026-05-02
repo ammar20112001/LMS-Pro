@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .db import engine, Base
 from .api import courses, items, sync
+from .api.courses import notes_router
 from .jobs import scheduler
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(courses.router)
 app.include_router(items.router)
 app.include_router(sync.router)
+app.include_router(notes_router)
 
 
 @app.get("/api/health")

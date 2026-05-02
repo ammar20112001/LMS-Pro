@@ -71,6 +71,15 @@ class Lecture(Base):
     has_video = Column(Boolean, default=False)
     has_reading = Column(Boolean, default=False)
 
+    # Phase 2 — notes pipeline
+    youtube_id = Column(String(20), nullable=True)
+    transcript_raw = Column(Text, nullable=True)
+    transcript_source = Column(String(20), nullable=True)   # youtube_auto | whisper_local
+    transcript_quality = Column(String(10), nullable=True)  # ok | poor | unavailable
+    notes_md = Column(Text, nullable=True)
+    notes_generated_at = Column(DateTime(timezone=True), nullable=True)
+    notes_status = Column(String(20), default="pending")    # pending | transcribing | generating | done | failed
+
     course = relationship("Course", back_populates="lectures")
 
 
