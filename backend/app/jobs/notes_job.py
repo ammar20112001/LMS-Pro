@@ -29,6 +29,7 @@ async def run_notes_job():
             db.query(Lecture)
             .filter(Lecture.has_video.is_(True))
             .filter(Lecture.youtube_id.isnot(None))
+            .filter(Lecture.youtube_id != "NONE")
             .filter(Lecture.notes_status == "pending")
             .order_by(Lecture.serial_no)
             .first()

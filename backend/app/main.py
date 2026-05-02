@@ -12,6 +12,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
+logging.getLogger("app.scraper").setLevel(logging.DEBUG)
 
 
 @asynccontextmanager

@@ -113,6 +113,7 @@ def notes_queue(db: Session = Depends(get_db)):
         db.query(Lecture)
         .filter(Lecture.has_video.is_(True))
         .filter(Lecture.youtube_id.isnot(None))
+        .filter(Lecture.youtube_id != "NONE")
         .filter(Lecture.notes_status == "pending")
         .order_by(Lecture.serial_no)
         .all()

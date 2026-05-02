@@ -205,9 +205,9 @@ class VULMSScraper:
 
     async def _wait_load(self):
         try:
-            await self._page.wait_for_load_state("networkidle", timeout=15000)
+            await self._page.wait_for_load_state("networkidle", timeout=20000)
         except Exception:
-            await self._page.wait_for_load_state("domcontentloaded", timeout=5000)
+            await self._page.wait_for_load_state("domcontentloaded", timeout=15000)
 
     async def _postback(self, event_target: str, event_argument: str = ""):
         async with self._page.expect_navigation(wait_until="networkidle", timeout=20000):
@@ -293,44 +293,78 @@ class VULMSScraper:
             return []
         return self._parse_lectures(html)
 
-    async def get_lecture_youtube_id(
+    async def get_lecture_video_url(
         self, course: CourseDTO, week: int, lms_index: int
     ) -> str | None:
         """
-        Click a specific lecture link and extract the YouTube video ID from the
-        resulting iframe. Returns None if no YouTube embed is found.
+        Click a lecture button (PostBack on same page), wait for content to load,
+        then extract the video URL. Handles both YouTube embeds and VU-hosted MP4s.
+        Returns the video URL string, or None if nothing found.
         """
         await self._set_course_context(course)
         await self._goto_section("CourseHome.aspx")
 
-        # Click the lecture view button to load the video panel
-        btn_id = f"WeeklySchedule_rptIndex_{week}_lbtnViewLesson_{lms_index}"
+        btn_suffix = f"WeeklySchedule_rptIndex_{week}_lbtnViewLesson_{lms_index}"
         try:
-            await self._page.click(f"#{btn_id}", timeout=8000)
-            await self._page.wait_for_timeout(2000)
-        except Exception:
-            # Try postback approach
-            target = f"ctl00$mainContent$WeeklySchedule$rptIndex${week}$lbtnViewLesson${lms_index}"
-            await self._postback(target)
+            await self._page.click(f"[id$='{btn_suffix}']", timeout=8000)
+        except Exception as e:
+            log.warning("Could not click lecture btn w=%d l=%d: %s", week, lms_index, e)
+            return None
 
-        html = await self._page.content()
-        return self._extract_youtube_id(html)
+        # Wait for the UpdatePanel AJAX to finish loading lecture content
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            await self._page.wait_for_timeout(3000)
+
+        # Read full page HTML — hfVideoID fields and YouTube links are all in here
+        yt_id = None
+        for attempt in range(2):
+            try:
+                html = await self._page.content()
+                yt_id = self._extract_yt_id_from_url(html)
+                break
+            except Exception:
+                await self._page.wait_for_timeout(1500)
+
+        if not yt_id:
+            # Also check frame URLs (YouTube iframe loaded by YT.Player JS)
+            for frame in self._page.frames:
+                yt_id = self._extract_yt_id_from_url(frame.url)
+                if yt_id:
+                    break
+
+        if yt_id:
+            log.info("YouTube ID w=%d l=%d: %s", week, lms_index, yt_id)
+        else:
+            log.warning("No YouTube ID found w=%d l=%d", week, lms_index)
+
+        # Return to LMS home so __VIEWSTATE exists for subsequent postbacks
+        try:
+            await self._page.goto(LMS_HOME, wait_until="networkidle", timeout=15000)
+        except Exception:
+            pass
+
+        return yt_id
 
     @staticmethod
-    def _extract_youtube_id(html: str) -> str | None:
-        """
-        Extract YouTube video ID from page HTML.
-        Handles embed URLs, watch URLs, and youtu.be short links.
-        """
+    def _extract_yt_id_from_url(text: str) -> str | None:
+        """Extract an 11-char YouTube video ID from a URL, src attribute, or raw HTML."""
+        if not text:
+            return None
         patterns = [
+            # ASP.NET hidden field: id="hfVideoID12345" value="XXXXXXXXXXX"
+            r'id="hfVideoID\d+"[^>]*value="([A-Za-z0-9_-]{11})"',
+            r'value="([A-Za-z0-9_-]{11})"[^>]*id="hfVideoID',
+            # Standard YouTube URLs
             r'youtube\.com/embed/([A-Za-z0-9_-]{11})',
             r'youtube\.com/watch\?v=([A-Za-z0-9_-]{11})',
             r'youtu\.be/([A-Za-z0-9_-]{11})',
             r'"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"',
+            r'[?&]v=([A-Za-z0-9_-]{11})',
         ]
-        import re
         for pat in patterns:
-            m = re.search(pat, html)
+            m = re.search(pat, text)
             if m:
                 return m.group(1)
         return None

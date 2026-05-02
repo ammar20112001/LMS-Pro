@@ -5,6 +5,7 @@ Runs every 30 minutes via APScheduler.
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -115,32 +116,33 @@ async def _sync_course(
     _sync_lectures(db, course, lectures)
 
     # Fill in YouTube IDs for video lectures that don't have one yet (max 5 per sync)
-    await _sync_youtube_ids(db, scraper, course, dto)
+    await _sync_video_urls(db, scraper, course, dto)
 
     return added, updated
 
 
-async def _sync_youtube_ids(
+async def _sync_video_urls(
     db: Session, scraper, course, dto
 ) -> None:
-    """Fetch YouTube IDs for up to 5 video lectures that are missing them."""
+    """Fetch video URLs for up to 5 video lectures that haven't been checked yet."""
     from ..models import Lecture
     pending = (
         db.query(Lecture)
         .filter_by(course_id=course.id, has_video=True)
-        .filter(Lecture.youtube_id.is_(None))
+        .filter(Lecture.youtube_id.is_(None))  # None = never checked
         .order_by(Lecture.serial_no)
         .limit(5)
         .all()
     )
     for lec in pending:
         try:
-            yt_id = await scraper.get_lecture_youtube_id(dto, lec.week, lec.lms_index)
+            yt_id = await scraper.get_lecture_video_url(dto, lec.week, lec.lms_index)
             if yt_id:
                 lec.youtube_id = yt_id
                 log.info("YouTube ID for lecture %d: %s", lec.serial_no, yt_id)
             else:
-                log.warning("No YouTube ID found for lecture %d (%s)", lec.serial_no, lec.title[:40])
+                lec.youtube_id = "NONE"  # checked, no YouTube video found
+                log.warning("No YouTube ID for lecture %d (%s)", lec.serial_no, lec.title[:40])
         except Exception as e:
             log.warning("Failed to get YouTube ID for lecture %d: %s", lec.serial_no, e)
     db.commit()
