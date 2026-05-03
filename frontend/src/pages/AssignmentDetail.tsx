@@ -98,6 +98,19 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
   const [formatLoading, setFormatLoading] = useState(false);
   const [generatedFile, setGeneratedFile] = useState<{ filename: string; file_url: string } | null>(null);
 
+  // Code execution (C++ mode)
+  const [mode, setMode] = useState<"text" | "cpp">("text");
+  const [stdinInput, setStdinInput] = useState("");
+  const [runLoading, setRunLoading] = useState(false);
+  const [runOutput, setRunOutput] = useState<{ success: boolean; output: string; stage?: string } | null>(null);
+
+  // Uploaded screenshots
+  const [uploadedImages, setUploadedImages] = useState<{ path: string; filename: string; url: string; preview: string }[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Generated file view
+  const [viewingGenerated, setViewingGenerated] = useState(false);
+
   // Submit state
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ status: string; message: string } | null>(null);
@@ -147,6 +160,42 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
     setCompleteLoading(false);
   }
 
+  async function handleRun() {
+    if (!solution.trim()) return;
+    setRunLoading(true);
+    setRunOutput(null);
+    try {
+      const res = await fetch(`${API}/api/assignments/${item.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: solution, stdin: stdinInput }),
+      });
+      const data = await res.json();
+      setRunOutput(data);
+    } catch {
+      setRunOutput({ success: false, output: "Could not connect to backend." });
+    }
+    setRunLoading(false);
+  }
+
+  async function handleImageUpload(file: File) {
+    setUploadingImage(true);
+    const preview = URL.createObjectURL(file);
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name || "screenshot.png");
+      const res = await fetch(`${API}/api/assignments/${item.id}/upload-image`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      setUploadedImages((prev) => [...prev, { ...data, preview }]);
+    } catch {
+      URL.revokeObjectURL(preview);
+    }
+    setUploadingImage(false);
+  }
+
   async function handleFormat() {
     if (!solution.trim() || !question.trim()) return;
     setFormatLoading(true);
@@ -156,7 +205,7 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       const res = await fetch(`${API}/api/assignments/${item.id}/format`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, solution, extra_instructions: aiInstructions }),
+        body: JSON.stringify({ question, solution, extra_instructions: aiInstructions, image_paths: uploadedImages.map((i) => i.path) }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -321,16 +370,97 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
               </svg>
               Write Your Solution
             </h3>
-            <span className="word-count">{wordCount} words</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              {mode === "text" && <span className="word-count">{wordCount} words</span>}
+              <div style={{ display: "flex", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
+                {(["text", "cpp"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => { setMode(m); setRunOutput(null); }}
+                    style={{
+                      padding: "0.2rem 0.6rem", fontSize: 11, fontFamily: m === "cpp" ? "monospace" : "inherit",
+                      background: mode === m ? "var(--accent)" : "transparent",
+                      color: mode === m ? "#fff" : "var(--text2)",
+                      border: "none", cursor: "pointer", fontWeight: mode === m ? 600 : 400,
+                    }}
+                  >
+                    {m === "text" ? "Text" : "C++"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <textarea
-            className="solution-textarea"
-            placeholder={"Write your solution here.\n\nStart with Question 1, then Q2, Q3…\n\nTip: Use the AI buttons below if you get stuck."}
-            value={solution}
-            onChange={(e) => setSolution(e.target.value)}
-            rows={14}
-          />
+          {/* Code/text editor + optional output panel side by side */}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <textarea
+                className="solution-textarea"
+                style={{
+                  fontFamily: mode === "cpp" ? "'Fira Code', 'Cascadia Code', Consolas, monospace" : "inherit",
+                  fontSize: mode === "cpp" ? 13 : undefined,
+                  tabSize: 4,
+                }}
+                placeholder={mode === "cpp"
+                  ? "#include <iostream>\nusing namespace std;\n\nint main() {\n    // your code here\n    return 0;\n}"
+                  : "Write your solution here.\n\nStart with Question 1, then Q2, Q3…\n\nTip: Use the AI buttons below if you get stuck."}
+                value={solution}
+                onChange={(e) => setSolution(e.target.value)}
+                onKeyDown={(e) => {
+                  if (mode === "cpp" && e.key === "Tab") {
+                    e.preventDefault();
+                    const s = e.currentTarget;
+                    const start = s.selectionStart;
+                    const end = s.selectionEnd;
+                    const next = solution.substring(0, start) + "    " + solution.substring(end);
+                    setSolution(next);
+                    requestAnimationFrame(() => { s.selectionStart = s.selectionEnd = start + 4; });
+                  }
+                }}
+                spellCheck={mode !== "cpp"}
+                rows={14}
+              />
+              {mode === "cpp" && (
+                <input
+                  style={{
+                    width: "100%", marginTop: "0.4rem", background: "var(--bg2)",
+                    border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)",
+                    padding: "0.4rem 0.75rem", fontSize: 12, color: "var(--text2)",
+                    fontFamily: "monospace", boxSizing: "border-box",
+                  }}
+                  placeholder="stdin input (optional — enter values your program reads)"
+                  value={stdinInput}
+                  onChange={(e) => setStdinInput(e.target.value)}
+                />
+              )}
+            </div>
+
+            {/* Terminal output panel */}
+            {mode === "cpp" && runOutput && (
+              <div style={{
+                width: "45%", flexShrink: 0, background: "#0d1117", borderRadius: "var(--radius-sm)",
+                border: `1px solid ${runOutput.success ? "oklch(0.55 0.18 145 / 0.4)" : "oklch(0.55 0.2 25 / 0.4)"}`,
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  padding: "0.4rem 0.75rem", fontSize: 11, fontWeight: 600,
+                  background: runOutput.success ? "oklch(0.55 0.18 145 / 0.15)" : "oklch(0.55 0.2 25 / 0.15)",
+                  color: runOutput.success ? "oklch(0.75 0.18 145)" : "oklch(0.75 0.2 25)",
+                  borderBottom: "1px solid oklch(0.3 0 0 / 0.4)",
+                }}>
+                  {runOutput.success ? "▶ Output" : `✗ ${runOutput.stage === "compile" ? "Compile Error" : "Runtime Error"}`}
+                </div>
+                <pre style={{
+                  margin: 0, padding: "0.75rem 1rem", fontSize: 12, lineHeight: 1.6,
+                  color: runOutput.success ? "#e6edf3" : "oklch(0.8 0.15 25)",
+                  fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  maxHeight: 320, overflowY: "auto",
+                }}>
+                  {runOutput.output}
+                </pre>
+              </div>
+            )}
+          </div>
 
           {/* Hint response */}
           {hint && (
@@ -352,15 +482,63 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
             </div>
           )}
 
-          {/* Custom AI instructions */}
-          <textarea
-            className="solution-textarea"
-            style={{ minHeight: 48, fontSize: 12, marginTop: "0.75rem", color: "var(--text2)" }}
-            placeholder="Optional: custom instructions for all AI actions — e.g. keep code beginner-level, use specific algorithm, focus on part 2 only…"
-            value={aiInstructions}
-            onChange={(e) => setAiInstructions(e.target.value)}
-            rows={2}
-          />
+          {/* AI instructions + image upload */}
+          <div style={{ marginTop: "0.75rem" }}>
+            <textarea
+              className="solution-textarea"
+              style={{ minHeight: 48, fontSize: 12, color: "var(--text2)" }}
+              placeholder="Optional: custom instructions for all AI actions — e.g. keep code beginner-level, use specific algorithm, focus on part 2 only…"
+              value={aiInstructions}
+              onChange={(e) => setAiInstructions(e.target.value)}
+              onPaste={async (e) => {
+                const imageItem = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
+                if (!imageItem) return;
+                e.preventDefault();
+                const blob = imageItem.getAsFile();
+                if (blob) await handleImageUpload(blob);
+              }}
+              rows={2}
+            />
+            {/* Image thumbnails */}
+            {uploadedImages.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
+                {uploadedImages.map((img, i) => (
+                  <div key={i} style={{ position: "relative" }}>
+                    <img
+                      src={img.preview}
+                      alt={img.filename}
+                      style={{ height: 56, width: "auto", borderRadius: 4, border: "1px solid var(--border2)", objectFit: "cover" }}
+                    />
+                    <button
+                      onClick={() => setUploadedImages((prev) => prev.filter((_, j) => j !== i))}
+                      style={{
+                        position: "absolute", top: -5, right: -5, width: 16, height: 16,
+                        borderRadius: "50%", background: "var(--bg3)", border: "1px solid var(--border2)",
+                        color: "var(--text2)", fontSize: 10, cursor: "pointer", display: "flex",
+                        alignItems: "center", justifyContent: "center", padding: 0,
+                      }}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.4rem" }}>
+              <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                Paste screenshots directly into the box above, or
+              </span>
+              <label style={{ fontSize: 11, color: "var(--accent)", cursor: "pointer" }}>
+                browse
+                <input
+                  type="file" accept="image/*" multiple style={{ display: "none" }}
+                  onChange={async (e) => {
+                    for (const f of Array.from(e.target.files ?? [])) await handleImageUpload(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {uploadingImage && <span style={{ fontSize: 11, color: "var(--text3)" }}>uploading…</span>}
+            </div>
+          </div>
 
           {/* Action bar */}
           <div className="solution-ai-bar">
@@ -368,23 +546,39 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
               <button
                 className="btn-ai-action btn-ai-action--hint"
                 onClick={handleGetHint}
-                disabled={busy || (!question.trim() && !solution.trim())}
+                disabled={busy || runLoading || (!question.trim() && !solution.trim())}
               >
                 {hintLoading ? <><Spinner /> Thinking…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Get a Hint</>}
               </button>
               <button
                 className="btn-ai-action btn-ai-action--complete"
                 onClick={handleAiComplete}
-                disabled={busy || !question.trim()}
+                disabled={busy || runLoading || !question.trim()}
               >
                 {completeLoading ? <><Spinner /> Writing…</> : "✦ Complete with AI"}
               </button>
+              {mode === "cpp" && (
+                <button
+                  style={{
+                    background: runLoading ? "var(--bg3)" : "oklch(0.55 0.18 145 / 0.2)",
+                    color: runLoading ? "var(--text3)" : "oklch(0.75 0.18 145)",
+                    border: "1px solid oklch(0.55 0.18 145 / 0.35)",
+                    borderRadius: "var(--radius-sm)", padding: "0.4rem 0.8rem",
+                    fontSize: 12, fontWeight: 600, cursor: runLoading ? "default" : "pointer",
+                    display: "flex", alignItems: "center", gap: "0.3rem",
+                  }}
+                  onClick={handleRun}
+                  disabled={runLoading || !solution.trim()}
+                >
+                  {runLoading ? <><Spinner /> Compiling…</> : "▶ Run"}
+                </button>
+              )}
             </div>
             <div className="solution-ai-bar__right">
               <button
                 className="btn-format"
                 onClick={handleFormat}
-                disabled={busy || !solution.trim() || !question.trim()}
+                disabled={busy || runLoading || !solution.trim() || !question.trim()}
               >
                 {formatLoading ? <><Spinner /> Generating file…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Format for Upload</>}
               </button>
@@ -402,12 +596,15 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, color: "var(--text2)" }}>📄 {generatedFile.filename}</span>
+              <button className="btn-file" onClick={() => setViewingGenerated((v) => !v)}>
+                {viewingGenerated ? "Close Preview" : "👁 Preview"}
+              </button>
               <a
                 href={`${API}${generatedFile.file_url}`}
                 download={generatedFile.filename}
                 className="btn-file"
               >
-                ↓ Download to review
+                ↓ Download
               </a>
               <button
                 className="btn-submit"
@@ -417,6 +614,17 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
                 {submitLoading ? <><Spinner /> Submitting…</> : "Submit to LMS →"}
               </button>
             </div>
+
+            {viewingGenerated && (
+              <div className="file-viewer" style={{ marginTop: "1rem" }}>
+                <div style={{ flex: 1, minHeight: 400, position: "relative" }}>
+                  <iframe
+                    src={`${API}${generatedFile.file_url}/view`}
+                    style={{ width: "100%", minHeight: 400, border: "none", display: "block" }}
+                  />
+                </div>
+              </div>
+            )}
 
             {submitResult && (
               <div

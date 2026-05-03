@@ -3,8 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,12 @@ class FormatRequest(BaseModel):
     question: str
     solution: str
     extra_instructions: str = ""
+    image_paths: list[str] = []
+
+
+class RunRequest(BaseModel):
+    code: str
+    stdin: str = ""
 
 
 class SubmitRequest(BaseModel):
@@ -93,6 +99,7 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
             student_name=settings.student_name,
             course_name=course_code,
             extra_instructions=req.extra_instructions,
+            image_paths=req.image_paths,
         )
     except Exception as e:
         log.exception("Format AI call failed for item %d", item_id)
@@ -109,7 +116,8 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
     output_path = out_dir / full_filename
 
     # Inject output_path + solution_text so Claude-generated code can use them directly
-    exec_code = f"output_path = r'{output_path}'\nsolution_text = {repr(req.solution)}\n{code}"
+    image_paths_repr = repr([str(p) for p in req.image_paths])
+    exec_code = f"output_path = r'{output_path}'\nsolution_text = {repr(req.solution)}\nimage_paths = {image_paths_repr}\n{code}"
     try:
         proc = subprocess.run(
             [sys.executable, "-c", exec_code],
@@ -132,6 +140,103 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
         "filename": full_filename,
         "file_url": f"/api/assignments/{item_id}/file/{full_filename}",
     }
+
+
+@router.post("/{item_id}/run")
+def run_code(item_id: int, req: RunRequest):
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        src = tmp / "solution.cpp"
+        exe = tmp / "solution"
+        src.write_text(req.code, encoding="utf-8")
+
+        compile_proc = subprocess.run(
+            ["g++", "-o", str(exe), str(src), "-std=c++17"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if compile_proc.returncode != 0:
+            return {"success": False, "output": compile_proc.stderr, "stage": "compile"}
+
+        try:
+            run_proc = subprocess.run(
+                [str(exe)],
+                input=req.stdin,
+                capture_output=True, text=True, timeout=10,
+                cwd=tmpdir,
+            )
+            output = run_proc.stdout
+            if run_proc.stderr:
+                output += ("\n" if output else "") + run_proc.stderr
+            return {"success": True, "output": output or "(no output)", "exit_code": run_proc.returncode}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "output": "Execution timed out (10s limit)", "stage": "run"}
+
+
+@router.post("/{item_id}/upload-image")
+async def upload_image(item_id: int, file: UploadFile = File(...)):
+    img_dir = TMP_DIR / str(item_id) / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = (file.filename or "image.png").replace("/", "_").replace("..", "_")
+    dest = img_dir / filename
+    stem, suffix = Path(filename).stem, Path(filename).suffix
+    counter = 1
+    while dest.exists():
+        dest = img_dir / f"{stem}_{counter}{suffix}"
+        counter += 1
+
+    dest.write_bytes(await file.read())
+    return {
+        "path": str(dest),
+        "filename": dest.name,
+        "url": f"/api/assignments/{item_id}/images/{dest.name}",
+    }
+
+
+@router.get("/{item_id}/images/{filename}")
+def serve_image(item_id: int, filename: str):
+    if ".." in filename or "/" in filename:
+        raise HTTPException(400, "Invalid filename")
+    img_path = TMP_DIR / str(item_id) / "images" / filename
+    if not img_path.exists():
+        raise HTTPException(404, "Image not found")
+    return FileResponse(str(img_path))
+
+
+@router.get("/{item_id}/file/{filename}/view")
+def view_generated_file(item_id: int, filename: str):
+    if ".." in filename or "/" in filename:
+        raise HTTPException(400, "Invalid filename")
+    file_path = TMP_DIR / str(item_id) / filename
+    if not file_path.exists():
+        raise HTTPException(404, "File not found — generate it first")
+
+    suffix = file_path.suffix.lower()
+
+    if suffix in (".cpp", ".c", ".py", ".java", ".cs", ".txt"):
+        code = file_path.read_text(encoding="utf-8", errors="replace")
+        escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        html = (
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            "<style>body{margin:0;background:#0d1117;color:#e6edf3;"
+            "font-family:'Fira Code',Consolas,monospace;font-size:13px;}"
+            "pre{padding:1.5rem 2rem;margin:0;white-space:pre-wrap;"
+            "word-break:break-all;line-height:1.7;}</style></head>"
+            f"<body><pre>{escaped}</pre></body></html>"
+        )
+        return HTMLResponse(content=html)
+
+    if suffix == ".docx":
+        from .items import _word_to_html, PAGE_CSS
+        try:
+            body_html = _word_to_html(file_path)
+            html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{PAGE_CSS}</style></head><body>{body_html}</body></html>"
+            return HTMLResponse(content=html)
+        except Exception as e:
+            raise HTTPException(500, f"Conversion failed: {e}")
+
+    raise HTTPException(400, f"Cannot preview {suffix} files inline")
 
 
 @router.get("/{item_id}/file/{filename}")
