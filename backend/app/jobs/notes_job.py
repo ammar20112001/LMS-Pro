@@ -1,130 +1,68 @@
 """
-Notes job: pick one pending lecture per run, fetch transcript, generate notes, write to Obsidian.
-Runs every 10 minutes via APScheduler.
+Notes job: fetch transcript, translate to English.
+AI handout generation is disabled until an AI provider is configured.
+Runs every 3 minutes via APScheduler, processing up to BATCH_SIZE videos per run.
 """
 
+import asyncio
 import logging
-from datetime import datetime, timezone
+import time
 
 from ..db import SessionLocal
-from ..models import Course, Lecture
-from ..config import settings
-from ..ai.client import get_ai_client
+from ..models import Course, Lecture, LectureVideo
 from ..notes.transcript import fetch_transcript, assess_quality, TranscriptUnavailable
-from ..notes.generator import generate_notes
-from ..notes.obsidian import write_note
 
 log = logging.getLogger(__name__)
+
+BATCH_SIZE = 5
+MAX_RETRIES = 10
+RETRY_DELAY_SECS = 2
+
+
+def _translate_to_english(text: str) -> str | None:
+    """
+    Translate text to English using Google Translate (via deep-translator, free/no API key).
+    Splits into 4500-char chunks to stay within the limit.
+    Returns None if translation fails.
+    """
+    try:
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source="auto", target="en")
+        chunk_size = 4500
+        chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        translated_chunks = [translator.translate(chunk) for chunk in chunks]
+        result = " ".join(c for c in translated_chunks if c)
+        log.info("Translation complete: %d → %d chars", len(text), len(result))
+        return result
+    except Exception as e:
+        log.warning("Translation failed: %s", e)
+        return None
 
 
 async def run_notes_job():
     """
     Entry point called by APScheduler.
-    Processes one pending lecture per run to stay within Gemini free-tier limits.
+    Processes up to BATCH_SIZE pending LectureVideo rows per run.
     """
     db = SessionLocal()
     try:
-        # Find the next lecture that has a YouTube ID but no notes yet
-        lecture = (
-            db.query(Lecture)
-            .filter(Lecture.has_video.is_(True))
-            .filter(Lecture.youtube_id.isnot(None))
-            .filter(Lecture.youtube_id != "NONE")
-            .filter(Lecture.notes_status == "pending")
-            .order_by(Lecture.serial_no)
-            .first()
+        videos = (
+            db.query(LectureVideo)
+            .filter(LectureVideo.youtube_id.isnot(None))
+            .filter(LectureVideo.youtube_id != "NONE")
+            .filter(LectureVideo.notes_status == "pending")
+            .filter(LectureVideo.transcript_retries < MAX_RETRIES)
+            .order_by(LectureVideo.lecture_id, LectureVideo.seq)
+            .limit(BATCH_SIZE)
+            .all()
         )
 
-        if not lecture:
-            return  # nothing to process
-
-        course = db.query(Course).get(lecture.course_id)
-        log.info(
-            "Notes job: processing lecture %d — %s (%s)",
-            lecture.serial_no, lecture.title[:50], course.code,
-        )
-
-        ai = get_ai_client()
-
-        # ── Step 1: fetch transcript ──────────────────────────────────────
-        lecture.notes_status = "transcribing"
-        db.commit()
-
-        try:
-            transcript, source = fetch_transcript(lecture.youtube_id)
-        except TranscriptUnavailable as e:
-            log.warning("Transcript unavailable: %s", e)
-            lecture.notes_status = "failed"
-            lecture.transcript_quality = "unavailable"
-            db.commit()
+        if not videos:
             return
 
-        quality = assess_quality(transcript)
-        lecture.transcript_raw = transcript
-        lecture.transcript_source = source
-        lecture.transcript_quality = quality
-        db.commit()
-
-        log.info(
-            "Transcript fetched: source=%s quality=%s words=%d",
-            source, quality, len(transcript.split()),
-        )
-
-        if quality == "poor":
-            log.warning(
-                "Lecture %d transcript quality is poor — flagged. "
-                "Set notes_status back to 'pending' and activate Whisper fallback to retry.",
-                lecture.serial_no,
-            )
-            lecture.notes_status = "failed"
-            db.commit()
-            return
-
-        # ── Step 2: generate notes ────────────────────────────────────────
-        lecture.notes_status = "generating"
-        db.commit()
-
-        try:
-            notes = await generate_notes(
-                title=lecture.title,
-                course_code=course.code,
-                lecture_serial=lecture.serial_no,
-                transcript=transcript,
-                ai_client=ai,
-            )
-        except Exception as e:
-            log.error("Note generation failed for lecture %d: %s", lecture.serial_no, e)
-            lecture.notes_status = "failed"
-            db.commit()
-            return
-
-        lecture.notes_md = notes
-        lecture.notes_generated_at = datetime.now(timezone.utc)
-        lecture.notes_status = "done"
-        db.commit()
-
-        # ── Step 3: write to Obsidian vault ───────────────────────────────
-        if settings.obsidian_vault_path:
-            try:
-                write_note(
-                    vault_root=settings.obsidian_vault_path,
-                    course_code=course.code,
-                    course_title=course.title,
-                    lecture_serial=lecture.serial_no,
-                    lecture_title=lecture.title,
-                    notes_md=notes,
-                    youtube_id=lecture.youtube_id,
-                )
-            except Exception as e:
-                log.error("Failed to write note to Obsidian: %s", e)
-                # Don't fail the job — notes are already in DB
-        else:
-            log.warning("OBSIDIAN_VAULT_PATH not set — skipping vault write")
-
-        log.info(
-            "Notes job complete: lecture %d (%s) — status=done",
-            lecture.serial_no, course.code,
-        )
+        log.info("Notes job: processing %d videos", len(videos))
+        for video in videos:
+            await _process_video(db, video)
 
     except Exception as e:
         log.exception("Notes job crashed: %s", e)
@@ -132,33 +70,111 @@ async def run_notes_job():
         db.close()
 
 
+async def _process_video(db, video: LectureVideo):
+    lecture = db.query(Lecture).get(video.lecture_id)
+    course = db.query(Course).get(lecture.course_id) if lecture else None
+    course_code = course.code if course else "?"
+    serial_no = lecture.serial_no if lecture else 0
+    title = lecture.title[:50] if lecture else "?"
+
+    log.info("Processing video %d (lecture %d seq %d) — %s (%s) [attempt %d]",
+             video.id, video.lecture_id, video.seq, title, course_code,
+             (video.transcript_retries or 0) + 1)
+
+    video.notes_status = "transcribing"
+    db.commit()
+
+    # ── Retry loop for transcript fetch ──────────────────────────────────
+    transcript = None
+    source = None
+    last_error = None
+
+    for attempt in range(3):
+        try:
+            transcript, source = fetch_transcript(video.youtube_id)
+            break
+        except TranscriptUnavailable as e:
+            last_error = e
+            if attempt < 2:
+                log.warning("Attempt %d failed for video %d: %s — retrying in %ds",
+                            attempt + 1, video.id, e, RETRY_DELAY_SECS)
+                await asyncio.sleep(RETRY_DELAY_SECS)
+        except Exception as e:
+            last_error = e
+            if attempt < 2:
+                log.warning("Attempt %d unexpected error for video %d: %s — retrying",
+                            attempt + 1, video.id, e)
+                await asyncio.sleep(RETRY_DELAY_SECS)
+
+    if transcript is None:
+        video.transcript_retries = (video.transcript_retries or 0) + 1
+        if video.transcript_retries >= MAX_RETRIES:
+            log.error("Video %d exhausted %d retries — marking failed: %s",
+                      video.id, MAX_RETRIES, last_error)
+            video.notes_status = "failed"
+            video.transcript_quality = "unavailable"
+        else:
+            log.warning("Video %d failed this run (retry %d/%d) — will retry next run",
+                        video.id, video.transcript_retries, MAX_RETRIES)
+            video.notes_status = "pending"
+        db.commit()
+        return
+
+    quality = assess_quality(transcript)
+    video.transcript_raw = transcript
+    video.transcript_source = source
+    video.transcript_quality = quality
+    video.transcript_retries = 0  # reset on success
+    db.commit()
+
+    if quality == "poor":
+        log.warning("Video %d transcript quality poor — skipping", video.id)
+        video.notes_status = "failed"
+        db.commit()
+        return
+
+    # ── Translate to English ──────────────────────────────────────────────
+    log.info("Translating video %d transcript to English…", video.id)
+    translated = _translate_to_english(transcript)
+    if translated:
+        video.transcript_en = translated
+        log.info("Video %d translated: %d words", video.id, len(translated.split()))
+    else:
+        log.warning("Video %d translation failed — transcript_en will be empty", video.id)
+
+    video.notes_status = "transcribed"
+    db.commit()
+    log.info("Video %d (lecture %d seq %d, %s) transcribed and translated",
+             video.id, video.lecture_id, video.seq, course_code)
+
+
 async def run_notes_for_lecture(lecture_id: int) -> dict:
     """
-    Manually trigger notes generation for a specific lecture.
-    Used by the API endpoint POST /api/notes/run.
-    Returns a status dict.
+    Manually trigger transcript fetching for all pending videos of a lecture.
+    Used by POST /api/notes/run.
     """
     db = SessionLocal()
     try:
         lecture = db.query(Lecture).get(lecture_id)
         if not lecture:
             return {"error": "Lecture not found"}
-        if not lecture.youtube_id:
-            return {"error": "No YouTube ID for this lecture — sync first"}
-
-        # Reset so the job picks it up
-        lecture.notes_status = "pending"
-        lecture.transcript_quality = None
-        db.commit()
-
-        await run_notes_job()
-
+        pending_videos = [
+            v for v in lecture.videos
+            if v.youtube_id and v.youtube_id != "NONE"
+            and v.notes_status in ("pending", "failed")
+        ]
+        if not pending_videos:
+            return {"error": "No pending videos for this lecture"}
+        for video in pending_videos:
+            video.notes_status = "pending"
+            video.transcript_retries = 0
+            db.commit()
+            await _process_video(db, video)
         db.refresh(lecture)
         return {
             "lecture_id": lecture_id,
-            "notes_status": lecture.notes_status,
-            "transcript_quality": lecture.transcript_quality,
-            "transcript_source": lecture.transcript_source,
+            "videos_processed": len(pending_videos),
+            "video_statuses": [{"seq": v.seq, "status": v.notes_status} for v in lecture.videos],
         }
     finally:
         db.close()

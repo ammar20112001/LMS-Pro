@@ -36,7 +36,7 @@ class Settings:
     obsidian_vault_path: str = _env.get("OBSIDIAN_VAULT_PATH", "")
 
     # Notes job
-    notes_interval_minutes: int = int(_env.get("notes_interval_minutes", "10"))
+    notes_interval_minutes: int = int(_env.get("notes_interval_minutes", "3"))
 
     def __init__(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)

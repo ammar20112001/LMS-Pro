@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
-from ..models import Course, Item, Notification, SyncRun, utcnow
+from ..models import Course, Item, Lecture, LectureVideo, Notification, SyncRun, utcnow
 from ..scraper import VULMSScraper, CourseDTO, ItemDTO, LectureDTO
 
 log = logging.getLogger(__name__)
@@ -121,30 +121,46 @@ async def _sync_course(
     return added, updated
 
 
-async def _sync_video_urls(
-    db: Session, scraper, course, dto
-) -> None:
-    """Fetch video URLs for up to 5 video lectures that haven't been checked yet."""
-    from ..models import Lecture
+async def _sync_video_urls(db: Session, scraper, course, dto) -> None:
+    """Discover video tab counts and upsert LectureVideo rows (non-destructive)."""
+    # Pick up any lecture not yet confirmed for video count, including previously migrated ones
     pending = (
         db.query(Lecture)
-        .filter_by(course_id=course.id, has_video=True)
-        .filter(Lecture.youtube_id.is_(None))  # None = never checked
+        .filter_by(course_id=course.id, has_video=True, videos_scraped=False)
         .order_by(Lecture.serial_no)
-        .limit(5)
+        .limit(20)
         .all()
     )
+
     for lec in pending:
         try:
-            yt_id = await scraper.get_lecture_video_url(dto, lec.week, lec.lms_index)
-            if yt_id:
-                lec.youtube_id = yt_id
-                log.info("YouTube ID for lecture %d: %s", lec.serial_no, yt_id)
+            yt_ids = await scraper.get_lecture_all_video_urls(dto, lec.week, lec.lms_index)
+            if not yt_ids:
+                log.warning("No video data for lecture %d (%s)", lec.serial_no, lec.title[:40])
+                # Ensure at least a placeholder row exists; don't mark scraped so it retries
+                if not lec.videos:
+                    db.add(LectureVideo(lecture_id=lec.id, seq=1, youtube_id="NONE"))
             else:
-                lec.youtube_id = "NONE"  # checked, no YouTube video found
-                log.warning("No YouTube ID for lecture %d (%s)", lec.serial_no, lec.title[:40])
+                lec.video_count = len(yt_ids)
+                existing = {v.seq: v for v in lec.videos}
+                for seq, yt_id in enumerate(yt_ids, start=1):
+                    lv = existing.get(seq)
+                    if lv:
+                        # Already exists from migration — only fill in if still unchecked
+                        if lv.youtube_id is None:
+                            lv.youtube_id = yt_id if yt_id else "NONE"
+                    else:
+                        # New video tab — add without touching existing rows
+                        db.add(LectureVideo(
+                            lecture_id=lec.id,
+                            seq=seq,
+                            youtube_id=yt_id if yt_id else "NONE",
+                        ))
+                lec.videos_scraped = True
+                log.info("Lecture %d: confirmed %d video(s)", lec.serial_no, len(yt_ids))
         except Exception as e:
-            log.warning("Failed to get YouTube ID for lecture %d: %s", lec.serial_no, e)
+            log.warning("Failed to get video URLs for lecture %d: %s", lec.serial_no, e)
+
     db.commit()
 
 
@@ -193,7 +209,6 @@ def _upsert_item(db: Session, course: Course, dto: ItemDTO) -> tuple[int, int]:
 
 
 def _sync_lectures(db: Session, course: Course, dtos: list) -> None:
-    from ..models import Lecture
     existing = {(l.week, l.lms_index): l for l in course.lectures}
     for dto in dtos:
         key = (dto.week, dto.lms_index)

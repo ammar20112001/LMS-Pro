@@ -1,6 +1,6 @@
 """
 Transcript fetching from YouTube auto-generated captions.
-Falls back to faster-whisper if quality is poor (Phase 2b).
+Videos without captions are marked failed and skipped.
 """
 
 import logging
@@ -58,22 +58,3 @@ def assess_quality(transcript: str) -> str:
         return "poor"
 
     return "ok"
-
-
-def transcribe_with_whisper(youtube_id: str) -> tuple[str, str]:
-    """Fallback: download audio via yt-dlp then transcribe with faster-whisper."""
-    import tempfile, subprocess
-    from pathlib import Path
-    from faster_whisper import WhisperModel
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        audio_path = Path(tmpdir) / "audio.mp3"
-        subprocess.run([
-            "yt-dlp", "-f", "bestaudio", "-x", "--audio-format", "mp3",
-            "-o", str(audio_path), f"https://www.youtube.com/watch?v={youtube_id}",
-        ], check=True, capture_output=True)
-
-        model = WhisperModel("medium", device="cpu", compute_type="int8")
-        segments, _ = model.transcribe(str(audio_path), language=None)
-        text = " ".join(seg.text.strip() for seg in segments)
-        return text, "whisper_local"
