@@ -140,7 +140,7 @@ Your code must:
    `import re; code = re.sub(r'^```[\\w]*\\n?', '', solution_text.strip(), flags=re.MULTILINE); code = re.sub(r'^```$', '', code, flags=re.MULTILINE); code = code.strip()`
 6. ONLY include student name or roll number in the document if the assignment question EXPLICITLY instructs students to write their name or ID in the file. If not mentioned, omit them entirely.
 7. Write content using the native conventions of the target file format. For example, use real Word headings, paragraphs, and tables in a .docx file — not markdown syntax. Use proper code structure in a .cpp/.py file. Use plain readable text in a .txt file. Never apply formatting idioms from one format to another (e.g., no `# Heading` or `| col |` in a Word document).
-8. The variable `image_paths` is a pre-defined Python list of file paths to screenshots provided by the student. If `image_paths` is non-empty, embed those images in the document at contextually appropriate places. For .docx: use `from docx.shared import Inches` and `doc.add_picture(p, width=Inches(5.5))` after related content. You can see the screenshot contents in the images provided — use your judgment on placement.
+8. The variable `image_paths` is a pre-defined Python list of file paths to screenshots provided by the student. For document formats (.docx): embed each image at a contextually appropriate place using `from docx.shared import Inches` and `doc.add_picture(p, width=Inches(5.5))`. For code files (.cpp, .c, .py, .java, etc.): images CANNOT be embedded in source code — ignore `image_paths` entirely and just write the solution code to the file. The screenshots were provided for your visual context only.
 
 Example for a .docx output:
 ```
