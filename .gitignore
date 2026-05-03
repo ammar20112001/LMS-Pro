@@ -12,3 +12,6 @@ dist/
 .lms-pro/
 *.db
 state.json
+storage_state.json
+backend/test_*.py
+samples/
