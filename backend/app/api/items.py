@@ -139,9 +139,7 @@ async def get_text(item_id: int, db: Session = Depends(get_db)):
 
     file_path = settings.files_dir / f"{item_id}_{filename}"
     try:
-        from docx import Document
-        doc = Document(str(file_path))
-        text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        text = _extract_text(file_path)
         text_cache.write_text(text)
         return {"text": text}
     except Exception as e:
@@ -176,6 +174,37 @@ async def download_file(item_id: int, db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _extract_text(file_path) -> str:
+    """Extract plain text from a .doc or .docx file."""
+    import subprocess
+    import tempfile
+    import shutil
+    from pathlib import Path
+    from docx import Document
+
+    file_path = Path(file_path)
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".docx":
+        doc = Document(str(file_path))
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    # .doc — convert to .docx via LibreOffice first
+    with tempfile.TemporaryDirectory() as tmpdir:
+        shutil.copy(file_path, tmpdir)
+        subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "docx",
+             "--outdir", tmpdir, str(file_path)],
+            capture_output=True, timeout=60,
+        )
+        converted = Path(tmpdir) / (file_path.stem + ".docx")
+        if converted.exists():
+            doc = Document(str(converted))
+            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    raise RuntimeError(f"Could not convert {file_path.name} to text")
 
 
 def _word_to_html(file_path) -> str:
