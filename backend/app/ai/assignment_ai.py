@@ -47,11 +47,12 @@ What should the student focus on next?"""
     return _call_claude(system, user, max_tokens=300)
 
 
-def complete_solution(question: str) -> str:
-    system = """You are an expert CS student completing an assignment.
+def complete_solution(question: str, roll_number: str) -> str:
+    system = f"""You are an expert CS student completing an assignment.
+Your VU roll number is {roll_number} — use it wherever the assignment asks you to perform operations on your roll number (e.g. use digits of roll number as input values, perform calculations on it, etc.).
 Write a complete, correct solution to the assignment question.
-Write ONLY the answer content — no name, roll number, headers, file metadata, or submission formatting.
-Pure solution only."""
+Write ONLY the answer content — no name, roll number headers, file metadata, or submission boilerplate.
+Pure solution content only."""
 
     return _call_claude(system, f"Assignment:\n\n{question}", max_tokens=4096)
 
@@ -81,7 +82,7 @@ Your code must:
 2. Create the document at `output_path` using `solution_text` as the content
 3. For .docx files: use python-docx (`from docx import Document`)
 4. For .txt or .py files: use `open(output_path, 'w', encoding='utf-8')`
-5. Include student name/roll number in the document header ONLY if the assignment explicitly requires it
+5. ONLY include student name or roll number in the document if the assignment question EXPLICITLY instructs students to write their name or ID in the file. If not mentioned, omit them entirely.
 
 Example for a .docx output:
 ```

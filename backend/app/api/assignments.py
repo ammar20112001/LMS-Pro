@@ -71,7 +71,7 @@ def hint(item_id: int, req: HintRequest, db: Session = Depends(get_db)):
 def complete(item_id: int, req: CompleteRequest, db: Session = Depends(get_db)):
     _get_item(item_id, db)
     try:
-        result = complete_solution(req.question)
+        result = complete_solution(req.question, roll_number=settings.roll_number)
         return {"solution": result}
     except Exception as e:
         log.exception("Complete failed for item %d", item_id)
