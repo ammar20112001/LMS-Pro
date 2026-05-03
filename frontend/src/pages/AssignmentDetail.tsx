@@ -2,6 +2,8 @@ import { useState } from "react";
 import { parseISO } from "date-fns";
 import { Item, Course } from "../api/client";
 
+const API = "http://localhost:8000";
+
 interface Props {
   item: Item;
   course: Course | null;
@@ -10,7 +12,9 @@ interface Props {
 
 function formatDue(dueAt: string | null) {
   if (!dueAt) return "—";
-  return parseISO(dueAt).toLocaleDateString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseISO(dueAt).toLocaleDateString("en-PK", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 }
 
 function timeUntil(dueAt: string | null) {
@@ -28,24 +32,23 @@ function timeUntil(dueAt: string | null) {
 function Spinner() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="spin">
-      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="16 10"/>
+      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="16 10" />
     </svg>
   );
 }
 
 function InlineFileViewer({ itemId, title }: { itemId: number; title: string }) {
   const [loading, setLoading] = useState(true);
-  const viewUrl = `http://localhost:8000/api/items/${itemId}/file/view`;
-  const downloadUrl = `http://localhost:8000/api/items/${itemId}/file`;
-
   return (
     <div className="file-viewer" style={{ marginTop: "1rem" }}>
       <div className="file-viewer__header">
         <div className="file-viewer__title">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5l3 3v7.5a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V2.25A.75.75 0 013 1.5z" stroke="currentColor" strokeWidth="1.3"/></svg>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M3 1.5h5l3 3v7.5a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V2.25A.75.75 0 013 1.5z" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
           {title}
         </div>
-        <a href={downloadUrl} download className="fv-modal__dl">↓ Download</a>
+        <a href={`${API}/api/items/${itemId}/file`} download className="fv-modal__dl">↓ Download</a>
       </div>
       <div style={{ flex: 1, position: "relative", minHeight: 400 }}>
         {loading && (
@@ -56,7 +59,7 @@ function InlineFileViewer({ itemId, title }: { itemId: number; title: string }) 
           </div>
         )}
         <iframe
-          src={viewUrl}
+          src={`${API}/api/items/${itemId}/file/view`}
           style={{ width: "100%", minHeight: 400, border: "none", display: "block" }}
           onLoad={() => setLoading(false)}
         />
@@ -67,101 +70,130 @@ function InlineFileViewer({ itemId, title }: { itemId: number; title: string }) 
 
 export function AssignmentDetail({ item, course, onBack }: Props) {
   const [viewingFile, setViewingFile] = useState(false);
+  const [question, setQuestion] = useState("");
   const [solution, setSolution] = useState("");
+
+  // AI state
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hint, setHint] = useState("");
+  const [completeLoading, setCompleteLoading] = useState(false);
+  const [completeDone, setCompleteDone] = useState(false);
+
+  // Format for upload state
+  const [formatLoading, setFormatLoading] = useState(false);
+  const [generatedFile, setGeneratedFile] = useState<{ filename: string; file_url: string } | null>(null);
+
+  // Submit state
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitResult, setSubmitResult] = useState<{ status: string; message: string } | null>(null);
   const [submitted, setSubmitted] = useState(
     item.status === "Submitted" || Boolean(item.completed_at)
   );
-  const [submitting, setSubmitting] = useState(false);
-
-  const [aiState, setAiState] = useState<"idle" | "hint-loading" | "hint-done" | "complete-loading" | "complete-done">("idle");
-  const [aiHint, setAiHint] = useState("");
-  const [tweakInstructions, setTweakInstructions] = useState("");
-  const [showTweakBox, setShowTweakBox] = useState(false);
-
-  const [formatState, setFormatState] = useState<"idle" | "loading" | "done">("idle");
-  const [formattedSolution, setFormattedSolution] = useState("");
-  const [viewingFormatted, setViewingFormatted] = useState(false);
 
   const wordCount = solution.trim() ? solution.trim().split(/\s+/).length : 0;
   const time = timeUntil(item.due_at);
-
   const hasFile = Boolean(item.file_url);
+  const busy = hintLoading || completeLoading || formatLoading || submitLoading;
 
   async function handleGetHint() {
-    setAiState("hint-loading");
+    if (!question.trim() && !solution.trim()) return;
+    setHintLoading(true);
+    setHint("");
     try {
-      const res = await fetch("http://localhost:8000/api/ai/hint", {
+      const res = await fetch(`${API}/api/assignments/${item.id}/hint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: item.id, current_solution: solution }),
+        body: JSON.stringify({ question, solution_so_far: solution }),
       });
       const data = await res.json();
-      setAiHint(data.hint ?? "Could not reach AI.");
+      setHint(data.hint ?? "Could not reach AI.");
     } catch {
-      setAiHint("Could not reach AI. Please try again.");
+      setHint("Could not reach AI. Please try again.");
     }
-    setAiState("hint-done");
+    setHintLoading(false);
   }
 
   async function handleAiComplete() {
-    setAiState("complete-loading");
-    setShowTweakBox(false);
+    if (!question.trim()) return;
+    setCompleteLoading(true);
+    setCompleteDone(false);
     try {
-      const res = await fetch("http://localhost:8000/api/ai/complete", {
+      const res = await fetch(`${API}/api/assignments/${item.id}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: item.id, current_solution: solution, instructions: tweakInstructions }),
+        body: JSON.stringify({ question }),
       });
       const data = await res.json();
       setSolution(data.solution ?? solution);
-      setAiState("complete-done");
+      setCompleteDone(true);
     } catch {
-      setAiState("idle");
+      // leave solution unchanged
     }
+    setCompleteLoading(false);
   }
 
   async function handleFormat() {
-    if (!solution.trim()) return;
-    setFormatState("loading");
+    if (!solution.trim() || !question.trim()) return;
+    setFormatLoading(true);
+    setGeneratedFile(null);
+    setSubmitResult(null);
     try {
-      const res = await fetch("http://localhost:8000/api/ai/format", {
+      const res = await fetch(`${API}/api/assignments/${item.id}/format`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: item.id, solution }),
+        body: JSON.stringify({ question, solution }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Format failed");
+      }
+      const data = await res.json();
+      setGeneratedFile(data);
+    } catch (e: any) {
+      setGeneratedFile(null);
+      alert(`Format failed: ${e.message}`);
+    }
+    setFormatLoading(false);
+  }
+
+  async function handleSubmit() {
+    if (!generatedFile) return;
+    setSubmitLoading(true);
+    setSubmitResult(null);
+    try {
+      const res = await fetch(`${API}/api/assignments/${item.id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: generatedFile.filename }),
       });
       const data = await res.json();
-      setFormattedSolution(data.formatted ?? solution);
-      setFormatState("done");
-      setViewingFormatted(true);
+      setSubmitResult(data);
+      if (data.status === "success") setSubmitted(true);
     } catch {
-      setFormatState("idle");
+      setSubmitResult({ status: "error", message: "Could not connect to backend." });
     }
+    setSubmitLoading(false);
   }
 
-  function handleDirectSubmit() {
-    if (!solution.trim()) return;
-    setSubmitting(true);
-    setTimeout(() => { setSubmitting(false); setSubmitted(true); }, 1500);
-  }
-
-  if (submitted) {
+  // ── Submitted view ─────────────────────────────────────────────────────────
+  if (submitted && !submitResult) {
     return (
       <div className="page detail-page">
         <div className="page__header">
           <button className="btn-back" onClick={onBack}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             Back
           </button>
           <h1 className="page__title" style={{ marginTop: "0.75rem" }}>{item.title}</h1>
         </div>
-
         <div className="detail-meta">
           <div className="detail-meta__item"><span className="detail-meta__label">Course</span><span className="detail-meta__value">{item.course_code}</span></div>
           <div className="detail-meta__item"><span className="detail-meta__label">Due Date</span><span className="detail-meta__value">{formatDue(item.due_at)}</span></div>
           {item.total_marks && <div className="detail-meta__item"><span className="detail-meta__label">Total Marks</span><span className="detail-meta__value">{item.total_marks}</span></div>}
           <div className="detail-meta__item"><span className="detail-meta__label">Status</span><span className="status-chip status-chip--submitted">✓ Submitted</span></div>
         </div>
-
         <div className="detail-body">
           <section className="detail-section">
             <div className="submission-success">
@@ -171,30 +203,20 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
                 <div className="submission-success__sub">Verified on LMS</div>
               </div>
             </div>
-            {hasFile && (
-              <div className="submitted-files" style={{ marginTop: "1rem" }}>
-                <div className="submitted-files__label">Files</div>
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                  <button className="btn-file" onClick={() => setViewingFile(v => !v)}>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5l3 3v7.5a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V2.25A.75.75 0 013 1.5z" stroke="currentColor" strokeWidth="1.3"/></svg>
-                    Assignment File
-                    <span className="btn-file__action">{viewingFile ? "Close" : "View"}</span>
-                  </button>
-                </div>
-                {viewingFile && <InlineFileViewer itemId={item.id} title={item.title} />}
-              </div>
-            )}
           </section>
         </div>
       </div>
     );
   }
 
+  // ── Main view ──────────────────────────────────────────────────────────────
   return (
     <div className="page detail-page">
       <div className="page__header">
         <button className="btn-back" onClick={onBack}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           Back
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "0.75rem" }}>
@@ -209,35 +231,43 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       <div className="detail-meta">
         <div className="detail-meta__item"><span className="detail-meta__label">Due Date</span><span className="detail-meta__value">{formatDue(item.due_at)}</span></div>
         {item.total_marks && <div className="detail-meta__item"><span className="detail-meta__label">Total Marks</span><span className="detail-meta__value">{item.total_marks}</span></div>}
-        <div className="detail-meta__item"><span className="detail-meta__label">Status</span>
+        <div className="detail-meta__item">
+          <span className="detail-meta__label">Status</span>
           <span className={`status-chip ${item.status === "Open" ? "status-chip--open" : "status-chip--pending"}`}>{item.status ?? "Pending"}</span>
         </div>
         {!time.overdue && item.due_at && (
-          <div className="detail-meta__item"><span className="detail-meta__label">Time Left</span><span className={`detail-meta__value ${time.urgent ? "text-urgent" : ""}`}>{time.label}</span></div>
+          <div className="detail-meta__item">
+            <span className="detail-meta__label">Time Left</span>
+            <span className={`detail-meta__value ${time.urgent ? "text-urgent" : ""}`}>{time.label}</span>
+          </div>
         )}
       </div>
 
       <div className="detail-body">
 
-        {/* Assignment File */}
+        {/* Assignment file */}
         {hasFile && (
           <section className="detail-section">
             <h3 className="detail-section__title">
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 2h6l3 3v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.4"/><path d="M9 2v3h3" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <path d="M3 2h6l3 3v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M9 2v3h3" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              </svg>
               Assignment File
             </h3>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button className="btn-file" onClick={() => setViewingFile(v => !v)}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5l3 3v7.5a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V2.25A.75.75 0 013 1.5z" stroke="currentColor" strokeWidth="1.3"/></svg>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 1.5h5l3 3v7.5a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V2.25A.75.75 0 013 1.5z" stroke="currentColor" strokeWidth="1.3" />
+                </svg>
                 {item.title}
                 <span className="btn-file__action">{viewingFile ? "Close" : "View"}</span>
               </button>
-              <a
-                href={`http://localhost:8000/api/items/${item.id}/file`}
-                download
-                className="btn-file"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 11h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+              <a href={`${API}/api/items/${item.id}/file`} download className="btn-file">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2 11h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
                 Download
               </a>
             </div>
@@ -245,11 +275,32 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
           </section>
         )}
 
-        {/* Solution Writing */}
+        {/* Question context for AI */}
+        <section className="detail-section">
+          <h3 className="detail-section__title">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+              <path d="M7.5 2a5.5 5.5 0 100 11A5.5 5.5 0 007.5 2zm0 3v2.5m0 2.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            Assignment Question
+            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: "0.5rem" }}>— paste or type for AI context</span>
+          </h3>
+          <textarea
+            className="solution-textarea"
+            style={{ minHeight: 80, fontSize: 13 }}
+            placeholder="Paste the assignment question here so AI can understand what to solve…"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={3}
+          />
+        </section>
+
+        {/* Solution */}
         <section className="detail-section">
           <div className="solution-header">
             <h3 className="detail-section__title" style={{ marginBottom: 0 }}>
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 12L4.5 13 13 4.5 11.5 3 3 11.5 2 12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <path d="M2 12L4.5 13 13 4.5 11.5 3 3 11.5 2 12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              </svg>
               Write Your Solution
             </h3>
             <span className="word-count">{wordCount} words</span>
@@ -263,101 +314,109 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
             rows={14}
           />
 
-          {aiState === "hint-done" && aiHint && (
+          {/* Hint response */}
+          {hint && (
             <div className="ai-hint-box">
               <div className="ai-hint-box__header">
                 <span className="ai-glow-dot" /> AI Hint
               </div>
-              <div className="ai-hint-box__body">{aiHint}</div>
-              <button className="btn-dismiss" style={{ marginTop: "0.6rem" }} onClick={() => { setAiHint(""); setAiState("idle"); }}>Dismiss</button>
+              <div className="ai-hint-box__body">{hint}</div>
+              <button className="btn-dismiss" style={{ marginTop: "0.6rem" }} onClick={() => setHint("")}>Dismiss</button>
             </div>
           )}
 
-          {aiState === "complete-done" && (
+          {/* Complete confirmation */}
+          {completeDone && (
             <div className="ai-complete-notice">
               <span className="ai-glow-dot" />
               AI has filled in a complete solution above. Review and edit before submitting.
-              <button className="btn-dismiss" onClick={() => setAiState("idle")}>OK</button>
+              <button className="btn-dismiss" onClick={() => setCompleteDone(false)}>OK</button>
             </div>
           )}
 
-          {showTweakBox && (
-            <div className="tweak-instructions-box">
-              <label className="tweak-instructions-box__label">Custom instructions for AI completion</label>
-              <textarea
-                className="tweak-instructions-textarea"
-                placeholder="e.g. Focus on data hazards only. Use formal academic language."
-                value={tweakInstructions}
-                onChange={(e) => setTweakInstructions(e.target.value)}
-                rows={3}
-              />
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                <button className="btn-tweak-apply" onClick={handleAiComplete}>Apply & Complete</button>
-                <button className="btn-dismiss" onClick={() => setShowTweakBox(false)}>Cancel</button>
-              </div>
-            </div>
-          )}
-
+          {/* Action bar */}
           <div className="solution-ai-bar">
             <div className="solution-ai-bar__left">
               <button
                 className="btn-ai-action btn-ai-action--hint"
                 onClick={handleGetHint}
-                disabled={aiState === "hint-loading" || aiState === "complete-loading"}
+                disabled={busy || (!question.trim() && !solution.trim())}
               >
-                {aiState === "hint-loading" ? <><Spinner /> Thinking…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Get a Hint</>}
-              </button>
-              <button
-                className="btn-ai-action btn-ai-action--complete"
-                onClick={() => setShowTweakBox(true)}
-                disabled={aiState === "hint-loading" || aiState === "complete-loading"}
-              >
-                {aiState === "complete-loading" ? <><Spinner /> Writing…</> : "✦ Complete with AI"}
+                {hintLoading ? <><Spinner /> Thinking…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Get a Hint</>}
               </button>
               <button
                 className="btn-ai-action btn-ai-action--complete"
                 onClick={handleAiComplete}
-                disabled={aiState === "hint-loading" || aiState === "complete-loading"}
-                style={{ padding: "0.4rem 0.7rem", fontSize: 11 }}
+                disabled={busy || !question.trim()}
               >
-                Quick Complete
+                {completeLoading ? <><Spinner /> Writing…</> : "✦ Complete with AI"}
               </button>
             </div>
             <div className="solution-ai-bar__right">
-              {solution.trim() && (
-                <>
-                  <button className="btn-format" onClick={handleFormat} disabled={formatState === "loading"}>
-                    {formatState === "loading" ? <><Spinner /> Formatting…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Format for Upload</>}
-                  </button>
-                  <button className="btn-submit" onClick={handleDirectSubmit} disabled={submitting}>
-                    {submitting ? <><Spinner /> Submitting…</> : "Submit →"}
-                  </button>
-                </>
-              )}
+              <button
+                className="btn-format"
+                onClick={handleFormat}
+                disabled={busy || !solution.trim() || !question.trim()}
+              >
+                {formatLoading ? <><Spinner /> Generating file…</> : <><span className="ai-glow-dot" style={{ width: 5, height: 5 }} /> Format for Upload</>}
+              </button>
             </div>
           </div>
         </section>
 
-        {/* Formatted solution side-by-side */}
-        {viewingFormatted && formattedSolution && (
+        {/* Generated file panel */}
+        {generatedFile && (
           <section className="detail-section">
             <div className="formatted-panel__header">
               <h3 className="detail-section__title" style={{ marginBottom: 0 }}>
-                <span className="ai-glow-dot" /> AI-Formatted Solution — Ready to Submit
+                <span className="ai-glow-dot" /> Generated File — Ready to Submit
               </h3>
-              <button className="btn-dismiss" onClick={() => setViewingFormatted(false)}>Close</button>
             </div>
-            <div style={{ marginTop: "1rem" }}>
-              <div style={{ background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "1.25rem", whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7, color: "var(--text)", maxHeight: 500, overflowY: "auto" }}>
-                {formattedSolution}
-              </div>
-            </div>
-            <div className="formatted-panel__actions">
-              <button className="btn-submit" onClick={() => { setViewingFormatted(false); setSubmitting(true); setTimeout(() => { setSubmitting(false); setSubmitted(true); }, 1500); }} disabled={submitting}>
-                {submitting ? <><Spinner /> Submitting…</> : "Submit Formatted File →"}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, color: "var(--text2)" }}>📄 {generatedFile.filename}</span>
+              <a
+                href={`${API}${generatedFile.file_url}`}
+                download={generatedFile.filename}
+                className="btn-file"
+              >
+                ↓ Download to review
+              </a>
+              <button
+                className="btn-submit"
+                onClick={handleSubmit}
+                disabled={submitLoading}
+              >
+                {submitLoading ? <><Spinner /> Submitting…</> : "Submit to LMS →"}
               </button>
-              <button className="btn-dismiss" onClick={() => setViewingFormatted(false)}>Cancel</button>
             </div>
+
+            {submitResult && (
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: 13,
+                  background: submitResult.status === "success"
+                    ? "oklch(0.55 0.18 145 / 0.15)"
+                    : submitResult.status === "error"
+                    ? "oklch(0.55 0.2 25 / 0.15)"
+                    : "oklch(0.65 0.18 85 / 0.15)",
+                  color: submitResult.status === "success"
+                    ? "oklch(0.75 0.18 145)"
+                    : submitResult.status === "error"
+                    ? "oklch(0.75 0.2 25)"
+                    : "oklch(0.8 0.18 85)",
+                  border: `1px solid ${submitResult.status === "success"
+                    ? "oklch(0.55 0.18 145 / 0.3)"
+                    : submitResult.status === "error"
+                    ? "oklch(0.55 0.2 25 / 0.3)"
+                    : "oklch(0.65 0.18 85 / 0.3)"}`,
+                }}
+              >
+                {submitResult.message}
+              </div>
+            )}
           </section>
         )}
 
