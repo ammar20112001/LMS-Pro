@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { parseISO } from "date-fns";
 import {
   fetchLectures, fetchProgress, setProgress, fetchCourseItems,
-  Course, Item,
+  Course, Item, Lecture,
 } from "../api/client";
 
 interface Props {
   course: Course;
   onBack: () => void;
   onSelectItem: (item: Item) => void;
+  onSelectLecture?: (lecture: Lecture) => void;
 }
 
 function TypeBadge({ kind }: { kind: string }) {
@@ -31,7 +32,22 @@ function formatDue(dueAt: string | null) {
   return parseISO(dueAt).toLocaleDateString("en-PK", { month: "short", day: "numeric" });
 }
 
-export function CoursePage({ course, onBack, onSelectItem }: Props) {
+function LectureStatusChip({ lec }: { lec: Lecture }) {
+  const hasVideo = lec.has_video && lec.youtube_id && lec.youtube_id !== "NONE";
+  const noId = lec.has_video && (!lec.youtube_id || lec.youtube_id === "NONE");
+
+  if (!lec.has_video) return <span className="lec-status lec-status--novid">No video</span>;
+  if (noId) return <span className="lec-status lec-status--novid">Video not linked</span>;
+
+  const s = lec.notes_status;
+  if (s === "done") return <span className="lec-status lec-status--done">Handout ready</span>;
+  if (s === "transcribed") return <span className="lec-status lec-status--progress">Transcript ready</span>;
+  if (s === "transcribing" || s === "generating") return <span className="lec-status lec-status--gen">Generating…</span>;
+  if (s === "failed") return <span className="lec-status lec-status--novid">Failed</span>;
+  return <span className="lec-status lec-status--queued">Queued</span>;
+}
+
+export function CoursePage({ course, onBack, onSelectItem, onSelectLecture }: Props) {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"lectures" | "assignments" | "quizzes" | "gdbs">("lectures");
 
@@ -155,29 +171,66 @@ export function CoursePage({ course, onBack, onSelectItem }: Props) {
             )}
             {lectures.map((lec) => {
               const done = lec.serial_no <= current;
-              const isCurrent = lec.serial_no === current;
+              const canOpen = onSelectLecture &&
+                lec.has_video &&
+                lec.youtube_id &&
+                lec.youtube_id !== "NONE" &&
+                (lec.notes_status === "done" || lec.notes_status === "transcribed" || lec.notes_status === "transcribing");
+              const noVideo = !lec.has_video || !lec.youtube_id || lec.youtube_id === "NONE";
+
               return (
                 <div
                   key={lec.id}
-                  className={`lecture-row ${done && !isCurrent ? "lecture-row--done" : ""} ${isCurrent ? "lecture-row--current" : ""}`}
-                  onClick={() => progressMut.mutate(lec.serial_no)}
-                  title={`Mark up to lecture ${lec.serial_no} as done`}
+                  className={`lecture-row-v2 ${canOpen ? "lecture-row-v2--clickable" : ""} ${done ? "lecture-row-v2--done" : ""} ${noVideo ? "lecture-row-v2--dim" : ""}`}
+                  onClick={() => canOpen ? onSelectLecture!(lec) : progressMut.mutate(lec.serial_no)}
                 >
-                  <div className="lecture-row__num">{String(lec.serial_no).padStart(2, "0")}</div>
-                  <div className="lecture-row__body">
-                    <div className="lecture-row__title">{lec.title}</div>
-                    <div className="lecture-row__icons">
-                      {lec.has_video && <span className="lec-icon" title="Video">▶</span>}
-                      {lec.has_reading && <span className="lec-icon" title="Reading">📄</span>}
+                  <div className="lecture-row-v2__num">{String(lec.serial_no).padStart(2, "0")}</div>
+                  <div className="lecture-row-v2__body">
+                    <div className="lecture-row-v2__top">
+                      <span className="lecture-row-v2__title">{lec.title}</span>
+                      <div className="lecture-row-v2__icons">
+                        {lec.has_video && (
+                          <span className="lec-icon-v2" title="Video">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1.5h5.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5H1a.5.5 0 01-.5-.5V2a.5.5 0 01.5-.5z" stroke="currentColor" strokeWidth="1"/><path d="M7 3.5l2-1v5l-2-1" stroke="currentColor" strokeWidth="1"/></svg>
+                          </span>
+                        )}
+                        {lec.has_reading && (
+                          <span className="lec-icon-v2" title="Reading">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1"/><path d="M3 3.5h4M3 5h4M3 6.5h2.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/></svg>
+                          </span>
+                        )}
+                        {(lec.notes_status === "done" || lec.notes_status === "transcribed") && (
+                          <span className="lec-icon-v2 lec-icon-v2--handout" title="Handout/transcript available">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 1h6a1 1 0 011 1v6a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z" stroke="currentColor" strokeWidth="1"/><path d="M3 3.5h4M3 5h4M3 6.5h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/></svg>
+                          </span>
+                        )}
+                        {lec.notes_status === "transcribed" && (
+                          <span className="lec-icon-v2 lec-icon-v2--transcript" title="Transcript available">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1"/><path d="M3.5 5l1 1 2-2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    {done
-                      ? <span className={isCurrent ? "lec-current" : "lec-done"}>
-                          {isCurrent ? `#${lec.serial_no}` : "✓"}
-                        </span>
-                      : <span className="lec-todo">—</span>
-                    }
+                  <div className="lecture-row-v2__right">
+                    <LectureStatusChip lec={lec} />
+                    {lec.youtube_id && lec.youtube_id !== "NONE" && (
+                      <a
+                        className="btn-yt"
+                        href={`https://www.youtube.com/watch?v=${lec.youtube_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Watch on YouTube"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1C3.69 1 1 3.69 1 7s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 5l3.5 2-3.5 2V5z" fill="currentColor"/></svg>
+                      </a>
+                    )}
+                    {canOpen && (
+                      <span className="lecture-row-v2__arrow">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </span>
+                    )}
                   </div>
                 </div>
               );

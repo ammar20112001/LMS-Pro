@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchDueSoon, fetchCourses, fetchSyncRuns, triggerSync,
-  fetchProgress, Course, Item, SyncRun,
+  fetchProgress, fetchLectures, Course, Item, SyncRun, Lecture,
 } from "../api/client";
 import { formatDistanceToNow, parseISO, differenceInHours } from "date-fns";
 
@@ -49,13 +49,268 @@ function StatusChip({ status }: { status: string | null }) {
   return <span className="status-chip status-chip--pending">Pending</span>;
 }
 
+// ── Sync bar ──────────────────────────────────────────────────────────────────
+function SyncBar({ runs, onSync, syncing }: { runs: SyncRun[]; onSync: () => void; syncing: boolean }) {
+  return (
+    <div className="sync-bar">
+      <div className="sync-bar__history">
+        {runs.slice(0, 2).map((s) => (
+          <div key={s.id} className="sync-bar__item">
+            <div className={`sync-dot ${s.status === "ok" ? "sync-dot--ok" : s.status === "running" ? "sync-dot--running" : "sync-dot--err"}`} />
+            <span>{s.started_at ? formatDistanceToNow(parseISO(s.started_at), { addSuffix: true }) : "—"}</span>
+            {s.status === "ok"
+              ? <span className="sync-bar__detail">+{s.items_added} · {s.items_updated} updated</span>
+              : s.status === "running"
+                ? <span className="sync-bar__detail">Syncing…</span>
+                : <span className="sync-bar__detail sync-bar__detail--err">Error</span>
+            }
+          </div>
+        ))}
+      </div>
+      <button className={`btn-sync ${syncing ? "btn-sync--active" : ""}`} onClick={onSync} disabled={syncing}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className={syncing ? "spin" : ""}>
+          <path d="M11.5 6.5A5 5 0 112.3 3.2M11.5 6.5V3M11.5 3H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {syncing ? "Syncing…" : "Sync Now"}
+      </button>
+    </div>
+  );
+}
+
+// ── Focus card ────────────────────────────────────────────────────────────────
+function FocusCard({ item, color, label, onSelect }: { item: Item | null; color: string; label: string; onSelect: (i: Item) => void }) {
+  if (!item) {
+    return (
+      <div className="focus-card focus-card--empty">
+        <div className="focus-card__empty-icon">✓</div>
+        <div className="focus-card__empty-text">Nothing urgent</div>
+      </div>
+    );
+  }
+  const t = timeUntil(item.due_at);
+  return (
+    <div
+      className={`focus-card ${t.urgent ? "focus-card--urgent" : ""}`}
+      style={{ "--course-color": color } as React.CSSProperties}
+      onClick={() => onSelect(item)}
+    >
+      <div className="focus-card__label">{label}</div>
+      <div className="focus-card__bar" />
+      <div className="focus-card__body">
+        <div className="focus-card__top">
+          <TypeBadge kind={item.kind} />
+          <span className="focus-card__course">{item.course_code}</span>
+        </div>
+        <div className="focus-card__title">{item.title}</div>
+        <div className="focus-card__bottom">
+          <span className="focus-card__due">Due {formatDue(item.due_at)}</span>
+          <span className={`focus-card__time ${t.urgent ? "focus-card__time--urgent" : ""}`}>{t.label}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Study card ────────────────────────────────────────────────────────────────
+function StudyCard({ lecture, course, color, onSelect }: { lecture: Lecture; course: Course; color: string; onSelect: () => void }) {
+  return (
+    <div
+      className="study-focus-card"
+      style={{ "--course-color": color } as React.CSSProperties}
+      onClick={onSelect}
+    >
+      <div className="study-focus-card__label">Study Next</div>
+      <div className="study-focus-card__bar" />
+      <div className="study-focus-card__body">
+        <div className="study-focus-card__top">
+          <span className="study-focus-card__course">{course.code}</span>
+          <span className="study-focus-card__lec">Lecture {lecture.serial_no}</span>
+        </div>
+        <div className="study-focus-card__title">{lecture.title}</div>
+        <div className="study-focus-card__reason">Has transcript available</div>
+      </div>
+      <div className="study-focus-card__cta">Open handout →</div>
+    </div>
+  );
+}
+
+// ── Week timeline ─────────────────────────────────────────────────────────────
+function WeekTimeline({ items, courses, onSelectItem }: { items: Item[]; courses: Course[]; onSelectItem: (i: Item) => void }) {
+  const colorMap = Object.fromEntries(courses.map((c, i) => [c.id, courseColor(i)]));
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
+  const dayLabel = (d: Date, i: number) => {
+    if (i === 0) return "Today";
+    if (i === 1) return "Tomorrow";
+    return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  const itemsForDay = (day: Date) =>
+    items.filter((item) => {
+      if (!item.due_at) return false;
+      const due = parseISO(item.due_at);
+      return due.getFullYear() === day.getFullYear() &&
+        due.getMonth() === day.getMonth() &&
+        due.getDate() === day.getDate();
+    });
+
+  return (
+    <div className="week-timeline">
+      {days.map((day, i) => {
+        const dayItems = itemsForDay(day);
+        return (
+          <div key={i} className={`week-col ${i === 0 ? "week-col--today" : ""} ${dayItems.length === 0 ? "week-col--empty" : ""}`}>
+            <div className="week-col__label">{dayLabel(day, i)}</div>
+            <div className="week-col__items">
+              {dayItems.length === 0
+                ? <div className="week-col__empty-dot" />
+                : dayItems.map((item) => {
+                  const color = colorMap[item.course_id] ?? "#6366f1";
+                  const t = timeUntil(item.due_at);
+                  const done = item.status === "Submitted" || !!item.completed_at;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`week-item week-item--${item.kind} ${done ? "week-item--done" : ""}`}
+                      style={{ "--course-color": color } as React.CSSProperties}
+                      onClick={() => onSelectItem(item)}
+                      title={`${item.course_code}: ${item.title}`}
+                    >
+                      <div className="week-item__bar" />
+                      <div className="week-item__body">
+                        <div className="week-item__course">{item.course_code}</div>
+                        <div className="week-item__title">{item.title}</div>
+                        <div className="week-item__meta">
+                          <TypeBadge kind={item.kind} />
+                          {done
+                            ? <span className="week-item__done">✓</span>
+                            : <span className="week-item__time">{t.label}</span>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Course row (bottom section) ────────────────────────────────────────────────
+function CourseRow({ course, color, items, onSelectCourse }: { course: Course; color: string; items: Item[]; onSelectCourse: () => void }) {
+  const { data: progress } = useQuery({
+    queryKey: ["progress", course.id],
+    queryFn: () => fetchProgress(course.id),
+    staleTime: 60_000,
+  });
+  const pct = progress && progress.total_lectures > 0
+    ? Math.round((progress.current_lecture_serial / progress.total_lectures) * 100)
+    : 0;
+  const nextDue = items
+    .filter((i) => i.course_id === course.id && i.due_at && i.status !== "Submitted" && i.status !== "Expired")
+    .sort((a, b) => parseISO(a.due_at!).getTime() - parseISO(b.due_at!).getTime())[0] ?? null;
+
+  return (
+    <div
+      className="dashboard-course-row"
+      style={{ "--course-color": color } as React.CSSProperties}
+      onClick={onSelectCourse}
+    >
+      <div className="dashboard-course-row__bar" />
+      <div className="dashboard-course-row__body">
+        <div className="dashboard-course-row__top">
+          <span className="dashboard-course-row__code">{course.code}</span>
+          <span className="dashboard-course-row__title">{course.title}</span>
+        </div>
+        <div className="dashboard-course-row__bottom">
+          <div className="dashboard-course-row__progress">
+            <div className="dashboard-course-row__track">
+              <div className="dashboard-course-row__fill" style={{ width: `${pct}%`, background: color }} />
+            </div>
+            <span className="dashboard-course-row__pct">{pct}%</span>
+          </div>
+          {nextDue && (
+            <span className={`dashboard-course-row__next ${timeUntil(nextDue.due_at).urgent ? "text-urgent" : ""}`}>
+              {timeUntil(nextDue.due_at).label}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Lecture study queue ───────────────────────────────────────────────────────
+function StudyQueue({ courses, onSelectLecture }: { courses: Course[]; onSelectLecture: (l: Lecture, c: Course, idx: number) => void }) {
+  const { data: lectures = [] } = useQuery({
+    queryKey: ["all-transcribed-lectures"],
+    queryFn: async () => {
+      const all = await Promise.all(courses.map((c) => fetchLectures(c.id)));
+      return all.flatMap((lecs, i) => lecs.map((l) => ({ ...l, _courseIdx: i })));
+    },
+    enabled: courses.length > 0,
+    staleTime: 60_000,
+  });
+
+  const queue = lectures
+    .filter((l) => l.notes_status === "transcribed" || l.notes_status === "done")
+    .slice(0, 5);
+
+  if (queue.length === 0) return (
+    <div className="empty-state" style={{ minHeight: "auto", padding: "1rem" }}>
+      No transcribed lectures yet. The background job will fetch them automatically.
+    </div>
+  );
+
+  return (
+    <div className="study-queue">
+      {queue.map((lec, i) => {
+        const course = courses.find((c) => c.id === lec.course_id);
+        if (!course) return null;
+        const color = courseColor(courses.findIndex((c) => c.id === course.id));
+        return (
+          <div
+            key={lec.id}
+            className="study-queue-row"
+            style={{ "--course-color": color } as React.CSSProperties}
+            onClick={() => onSelectLecture(lec, course, courses.findIndex((c) => c.id === course.id))}
+          >
+            <div className="study-queue-row__num">{i + 1}</div>
+            <div className="study-queue-row__bar" />
+            <div className="study-queue-row__body">
+              <div className="study-queue-row__head">
+                <span className="study-queue-row__course">{course.code}</span>
+                <span className="study-queue-row__lec">Lec {lec.serial_no}</span>
+                <span className="study-queue-row__title">{lec.title}</span>
+              </div>
+              <div className="study-queue-row__reason">
+                <span className="study-next-dot" style={{ background: "var(--accent)" }} />
+                {lec.notes_status === "done" ? "Handout ready" : "Transcript available"}
+              </div>
+            </div>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4.5 3l4 3.5-4 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 interface Props {
   onSelectItem: (item: Item, courses: Course[]) => void;
   onSelectCourse: (course: Course) => void;
-  showCoursesView?: boolean;
+  onSelectLecture?: (lecture: Lecture, course: Course, courseIdx: number) => void;
 }
 
-export function Dashboard({ onSelectItem, onSelectCourse, showCoursesView }: Props) {
+export function Dashboard({ onSelectItem, onSelectCourse, onSelectLecture }: Props) {
   const qc = useQueryClient();
 
   const { data: items = [], isLoading } = useQuery({
@@ -80,201 +335,113 @@ export function Dashboard({ onSelectItem, onSelectCourse, showCoursesView }: Pro
     onSuccess: () => setTimeout(() => qc.invalidateQueries(), 3000),
   });
 
-  const lastRun = runs[0] as SyncRun | undefined;
-  const lastSyncLabel = lastRun?.finished_at
-    ? formatDistanceToNow(parseISO(lastRun.finished_at), { addSuffix: true })
-    : "Never";
+  const colorMap = Object.fromEntries(courses.map((c, i) => [c.id, courseColor(i)]));
 
-  const pendingAssignments = items.filter((i) => i.kind === "assignment" && i.status !== "Submitted" && i.status !== "Expired").length;
-  const upcomingQuizzes = items.filter((i) => i.kind === "quiz").length;
-  const openGDBs = items.filter((i) => i.kind === "gdb").length;
+  const pending = items
+    .filter((i) => i.status !== "Submitted" && i.status !== "Expired")
+    .sort((a, b) => parseISO(a.due_at ?? "9999").getTime() - parseISO(b.due_at ?? "9999").getTime());
+
   const urgentCount = items.filter((i) => {
-    if (i.status === "Submitted" || i.status === "Expired") return false;
-    if (!i.due_at) return false;
+    if (i.status === "Submitted" || i.status === "Expired" || !i.due_at) return false;
     return differenceInHours(parseISO(i.due_at), new Date()) < 24;
   }).length;
 
-  const getCourseIdx = (courseId: number) => courses.findIndex((c) => c.id === courseId);
+  const doNow = pending.find((i) => {
+    if (!i.due_at) return false;
+    const diff = parseISO(i.due_at).getTime() - Date.now();
+    return diff > 0 && diff < 2 * 24 * 3_600_000;
+  }) ?? pending[0] ?? null;
+
+  const doToday = pending.find((i) => {
+    if (i === doNow || !i.due_at) return false;
+    const diff = parseISO(i.due_at).getTime() - Date.now();
+    return diff > 0 && diff < 5 * 24 * 3_600_000;
+  }) ?? null;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="page dashboard">
-      <div className="page__header">
-        <div className="page__header-left">
-          <h1 className="page__title">Dashboard</h1>
-          <span className="page__subtitle">Spring 2026 · Virtual University of Pakistan</span>
+    <div className="page dashboard-v2">
+
+      {/* Hero */}
+      <div className="today-hero">
+        <div className="today-hero__left">
+          <div className="today-hero__greeting">{greeting}</div>
+          <div className="today-hero__date">
+            {new Date().toLocaleDateString("en-PK", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+          </div>
+          <div className="today-hero__summary">
+            {urgentCount > 0
+              ? <><span className="today-hero__urgent">{urgentCount} urgent</span> · {pending.length} total pending</>
+              : pending.length > 0
+                ? <>{pending.length} items pending · no urgent deadlines</>
+                : <span style={{ color: "var(--green)" }}>All caught up 🎉</span>
+            }
+          </div>
         </div>
-        <div className="page__header-right">
-          <span className="sync-label">Last sync: {lastSyncLabel}</span>
-          <button
-            className={`btn-sync ${syncMut.isPending ? "btn-sync--active" : ""}`}
-            onClick={() => syncMut.mutate()}
-            disabled={syncMut.isPending}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className={syncMut.isPending ? "spin" : ""}>
-              <path d="M12.5 7A5.5 5.5 0 112.3 3.7M12.5 7V3.5M12.5 3.5H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            {syncMut.isPending ? "Syncing…" : "Sync Now"}
-          </button>
-        </div>
+        <SyncBar runs={runs} onSync={() => syncMut.mutate()} syncing={syncMut.isPending} />
       </div>
 
-      {/* Stats row */}
-      <div className="stats-row">
-        <StatCard value={pendingAssignments} label="Pending Assignments" color="var(--accent)"
-          icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 3H7a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2z" stroke="currentColor" strokeWidth="1.5"/><path d="M7 8h6M7 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
-        />
-        <StatCard value={upcomingQuizzes} label="Upcoming Quizzes" color="var(--accent2)"
-          icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 6v4.5l3 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
-        />
-        <StatCard value={openGDBs} label="Open GDBs" color="var(--cyan)"
-          icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
-        />
-        <StatCard value={urgentCount} label="Due Within 24h" color="var(--amber)"
-          icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3v7l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="10" cy="11" r="7.5" stroke="currentColor" strokeWidth="1.5"/></svg>}
-        />
+      {/* Focus triptych */}
+      <div className="focus-triptych">
+        <FocusCard item={doNow} color={doNow ? colorMap[doNow.course_id] ?? "#6366f1" : "#6366f1"} label="Do Now" onSelect={(i) => onSelectItem(i, courses)} />
+        <FocusCard item={doToday} color={doToday ? colorMap[doToday.course_id] ?? "#6366f1" : "#6366f1"} label="Do Today" onSelect={(i) => onSelectItem(i, courses)} />
+        <FocusCard item={pending[2] ?? null} color={pending[2] ? colorMap[pending[2].course_id] ?? "#6366f1" : "#6366f1"} label="Due Soon" onSelect={(i) => onSelectItem(i, courses)} />
       </div>
 
-      <div className="dashboard__body">
-        {/* Deadlines feed */}
-        <section className="dashboard__deadlines">
+      {/* Week timeline */}
+      <section className="dashboard-section">
+        <div className="section-header">
+          <h2 className="section-title">This week</h2>
+          <span className="section-hint">Click any item to open it</span>
+        </div>
+        <WeekTimeline items={items} courses={courses} onSelectItem={(i) => onSelectItem(i, courses)} />
+      </section>
+
+      {/* Bottom two-col */}
+      <div className="dashboard-bottom">
+
+        {/* Study queue */}
+        <section className="dashboard-section">
           <div className="section-header">
-            <h2 className="section-title">Upcoming Deadlines</h2>
-            <span className="section-hint">Next 14 days across all courses</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span className="ai-glow-dot" />
+              <h2 className="section-title">Study queue</h2>
+            </div>
           </div>
-          <div className="deadline-list">
-            {isLoading && <div className="empty-state">Loading…</div>}
-            {!isLoading && items.length === 0 && (
-              <div className="empty-state">Nothing due in the next 14 days. Run a sync to pull latest from VU LMS.</div>
-            )}
-            {items.map((item) => {
-              const idx = getCourseIdx(item.course_id);
-              const color = courseColor(idx >= 0 ? idx : 0);
-              const t = timeUntil(item.due_at);
-              const isSubmitted = item.status === "Submitted" || Boolean(item.completed_at);
-              const isExpired = item.status === "Expired";
-              return (
-                <div
-                  key={item.id}
-                  className={`deadline-row ${t.urgent && !isSubmitted && !isExpired ? "deadline-row--urgent" : ""} ${isSubmitted ? "deadline-row--submitted" : ""} ${isExpired ? "deadline-row--expired" : ""}`}
-                  style={{ "--course-color": color } as React.CSSProperties}
-                  onClick={() => onSelectItem(item, courses)}
-                >
-                  <div className="deadline-row__course-bar" />
-                  <div className="deadline-row__main">
-                    <div className="deadline-row__top">
-                      <div className="deadline-row__left">
-                        <TypeBadge kind={item.kind} />
-                        <span className="deadline-row__course">{item.course_code}</span>
-                        <span className="deadline-row__title">{item.title}</span>
-                      </div>
-                      <StatusChip status={item.status} />
-                    </div>
-                    <div className="deadline-row__bottom">
-                      <span className="deadline-row__due">Due {formatDue(item.due_at)}</span>
-                      {item.total_marks && <span className="deadline-row__marks">{item.total_marks} marks</span>}
-                      {!isSubmitted && !isExpired && item.due_at && (
-                        <span className={`deadline-row__countdown ${t.urgent ? "deadline-row__countdown--urgent" : ""} ${t.overdue ? "deadline-row__countdown--overdue" : ""}`}>
-                          {t.overdue ? "⚠ " : "⏱ "}{t.label}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {courses.length > 0 ? (
+            <StudyQueue
+              courses={courses}
+              onSelectLecture={(l, c, idx) => onSelectLecture?.(l, c, idx)}
+            />
+          ) : (
+            <div className="empty-state" style={{ minHeight: "auto", padding: "1rem" }}>Run a sync to see your courses.</div>
+          )}
         </section>
 
-        {/* Aside: courses + sync history */}
-        <aside className="dashboard__aside">
-          <section>
-            <div className="section-header">
-              <h2 className="section-title">My Courses</h2>
-            </div>
-            <div className="course-list">
-              {courses.map((c, idx) => {
-                const color = courseColor(idx);
-                return (
-                  <CourseCard
-                    key={c.id}
-                    course={c}
-                    color={color}
-                    onClick={() => onSelectCourse(c)}
-                  />
-                );
-              })}
-              {courses.length === 0 && <div className="empty-state">No courses yet. Run a sync.</div>}
-            </div>
-          </section>
-
-          {runs.length > 0 && (
-            <section>
-              <div className="section-header">
-                <h2 className="section-title">Sync History</h2>
-              </div>
-              <div className="sync-table">
-                {runs.slice(0, 5).map((r) => (
-                  <div className="sync-row" key={r.id}>
-                    <div className={`sync-dot ${r.status === "ok" ? "sync-dot--ok" : r.status === "running" ? "sync-dot--running" : "sync-dot--err"}`} />
-                    <div className="sync-row__time">
-                      {r.started_at ? formatDistanceToNow(parseISO(r.started_at), { addSuffix: true }) : "—"}
-                    </div>
-                    <div className="sync-row__info">
-                      {r.status === "ok"
-                        ? `+${r.items_added} added · ${r.items_updated} updated`
-                        : r.status === "running"
-                          ? "Running…"
-                          : <span className="sync-row__error">Error</span>
-                      }
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ value, label, color, icon }: { value: number; label: string; color: string; icon: React.ReactNode }) {
-  return (
-    <div className="stat-card" style={{ "--accent": color } as React.CSSProperties}>
-      <div className="stat-card__icon">{icon}</div>
-      <div>
-        <div className="stat-card__value">{value}</div>
-        <div className="stat-card__label">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function CourseCard({ course, color, onClick }: { course: Course; color: string; onClick: () => void }) {
-  const { data: progress } = useQuery({
-    queryKey: ["progress", course.id],
-    queryFn: () => fetchProgress(course.id),
-  });
-
-  const pct = progress && progress.total_lectures > 0
-    ? Math.round((progress.current_lecture_serial / progress.total_lectures) * 100)
-    : 0;
-
-  return (
-    <div
-      className="course-card"
-      style={{ "--course-color": color } as React.CSSProperties}
-      onClick={onClick}
-    >
-      <div className="course-card__code">{course.code}</div>
-      <div className="course-card__title">{course.title}</div>
-      <div className="course-card__progress">
-        <div className="course-card__progress-bar">
-          <div className="course-card__progress-fill" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="course-card__progress-label">
-          {progress ? `${progress.current_lecture_serial}/${progress.total_lectures}` : "—"} lec
-        </span>
+        {/* Courses overview */}
+        <section className="dashboard-section">
+          <div className="section-header">
+            <h2 className="section-title">Courses</h2>
+            <button className="section-link" onClick={() => onSelectCourse && courses[0] && onSelectCourse(courses[0])}>View all →</button>
+          </div>
+          <div className="dashboard-courses">
+            {isLoading && <div className="empty-state" style={{ minHeight: "auto" }}>Loading…</div>}
+            {!isLoading && courses.length === 0 && (
+              <div className="empty-state" style={{ minHeight: "auto" }}>No courses yet. Run a sync.</div>
+            )}
+            {courses.map((c, i) => (
+              <CourseRow
+                key={c.id}
+                course={c}
+                color={courseColor(i)}
+                items={items}
+                onSelectCourse={() => onSelectCourse(c)}
+              />
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );

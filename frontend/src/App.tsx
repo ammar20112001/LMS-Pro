@@ -2,16 +2,20 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Dashboard } from "./pages/Dashboard";
 import { CoursePage } from "./pages/CoursePage";
+import { CoursesPage } from "./pages/CoursesPage";
+import { HandoutReader } from "./pages/HandoutReader";
 import { AssignmentDetail } from "./pages/AssignmentDetail";
 import { QuizDetail } from "./pages/QuizDetail";
 import { GDBDetail } from "./pages/GDBDetail";
-import { Course, Item } from "./api/client";
+import { PipelinePage } from "./pages/PipelinePage";
+import { StudyGuidePage } from "./pages/StudyGuidePage";
+import { Course, Item, Lecture } from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
 
-type Page = "dashboard" | "courses" | "chat" | "settings";
+type Page = "dashboard" | "courses" | "study" | "pipeline" | "chat" | "settings";
 
 const NAV = [
   {
@@ -33,6 +37,30 @@ const NAV = [
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M9 2L16 5.5V9C16 12.5 13 15.5 9 17C5 15.5 2 12.5 2 9V5.5L9 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
         <path d="M6 9l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "study" as Page,
+    label: "Study Guide",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M3 2h12a1 1 0 011 1v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+        <path d="M3 10v4a2 2 0 002 2h8a2 2 0 002-2v-4M7 6h4M7 8.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "pipeline" as Page,
+    label: "Pipeline",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="4" r="2" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="9" cy="14" r="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M9 6v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx="3" cy="9" r="2" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="15" cy="9" r="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M5 9h2M11 9h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
   },
@@ -106,12 +134,17 @@ function Sidebar({ active, onNav, expanded, onToggle }: {
   );
 }
 
+const COURSE_COLORS = [
+  "#6366f1","#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#14b8a6",
+];
+
 type DrillState =
   | { type: "none" }
   | { type: "course"; course: Course }
   | { type: "assignment"; item: Item; course: Course | null }
   | { type: "quiz"; item: Item; course: Course | null }
-  | { type: "gdb"; item: Item; course: Course | null };
+  | { type: "gdb"; item: Item; course: Course | null }
+  | { type: "handout"; lecture: Lecture; course: Course; courseIdx: number };
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -126,9 +159,16 @@ export default function App() {
     else if (item.kind === "gdb") setDrill({ type: "gdb", item, course });
   }
 
+  function handleSelectLecture(lecture: Lecture, course: Course, courseIdx: number) {
+    setDrill({ type: "handout", lecture, course, courseIdx });
+  }
+
   function handleBack() {
-    if (drill.type === "course") setDrill({ type: "none" });
-    else if (drill.type !== "none") setDrill({ type: "none" });
+    if (drill.type === "handout") {
+      setDrill({ type: "course", course: drill.course });
+    } else {
+      setDrill({ type: "none" });
+    }
   }
 
   function handleNav(p: Page) {
@@ -137,12 +177,27 @@ export default function App() {
   }
 
   function renderContent() {
+    if (drill.type === "handout") {
+      return (
+        <HandoutReader
+          lectureId={drill.lecture.id}
+          courseId={drill.course.id}
+          serialNo={drill.lecture.serial_no}
+          lectureTitle={drill.lecture.title}
+          course={drill.course}
+          courseIndex={drill.courseIdx}
+          onBack={handleBack}
+        />
+      );
+    }
+
     if (drill.type === "course") {
       return (
         <CoursePage
           course={drill.course}
           onBack={handleBack}
           onSelectItem={(item) => handleSelectItem(item, allCourses)}
+          onSelectLecture={(lec) => handleSelectLecture(lec, drill.course, allCourses.findIndex((c) => c.id === drill.course.id))}
         />
       );
     }
@@ -156,17 +211,51 @@ export default function App() {
       return <GDBDetail item={drill.item} course={drill.course} onBack={handleBack} />;
     }
 
-    if (page === "dashboard" || page === "courses") {
+    if (page === "dashboard") {
       return (
         <Dashboard
           onSelectItem={(item, courses) => {
             setAllCourses(courses);
             handleSelectItem(item, courses);
           }}
-          onSelectCourse={(course) => setDrill({ type: "course", course })}
-          showCoursesView={page === "courses"}
+          onSelectCourse={(course) => {
+            setAllCourses((prev) => {
+              if (!prev.find((c) => c.id === course.id)) return [...prev, course];
+              return prev;
+            });
+            setDrill({ type: "course", course });
+          }}
+          onSelectLecture={(lec, course, idx) => {
+            setAllCourses((prev) => {
+              if (!prev.find((c) => c.id === course.id)) return [...prev, course];
+              return prev;
+            });
+            handleSelectLecture(lec, course, idx);
+          }}
         />
       );
+    }
+
+    if (page === "courses") {
+      return (
+        <CoursesPage
+          onSelectCourse={(course) => {
+            setAllCourses((prev) => {
+              if (!prev.find((c) => c.id === course.id)) return [...prev, course];
+              return prev;
+            });
+            setDrill({ type: "course", course });
+          }}
+        />
+      );
+    }
+
+    if (page === "study") {
+      return <StudyGuidePage />;
+    }
+
+    if (page === "pipeline") {
+      return <PipelinePage />;
     }
 
     if (page === "chat") {
