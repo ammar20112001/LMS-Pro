@@ -86,7 +86,6 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
     try:
         ai_result = format_for_upload(
             question=req.question,
-            solution=req.solution,
             roll_number=settings.roll_number,
             student_name=settings.student_name,
             course_name=course_code,
@@ -105,8 +104,8 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
     full_filename = f"{filename}.{extension}"
     output_path = out_dir / full_filename
 
-    # Inject output_path and execute the generated code
-    exec_code = f"output_path = r'{output_path}'\n{code}"
+    # Inject output_path + solution_text so Claude-generated code can use them directly
+    exec_code = f"output_path = r'{output_path}'\nsolution_text = {repr(req.solution)}\n{code}"
     try:
         proc = subprocess.run(
             [sys.executable, "-c", exec_code],

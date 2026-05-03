@@ -113,6 +113,41 @@ def _get_cached_file(item_id: int) -> tuple[bytes, str] | None:
     return cache_path.read_bytes(), filename
 
 
+@router.get("/{item_id}/text")
+async def get_text(item_id: int, db: Session = Depends(get_db)):
+    """Extract plain text from the assignment file for AI context. Cached after first fetch."""
+    from ..config import settings
+
+    item = db.query(Item).get(item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    text_cache = settings.files_dir / f"{item_id}.txt"
+    if text_cache.exists():
+        return {"text": text_cache.read_text()}
+
+    cached = _get_cached_file(item_id)
+    if cached:
+        data, filename = cached
+    else:
+        try:
+            data, filename = await _fetch_and_cache_file(item)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Download failed: {e}")
+
+    file_path = settings.files_dir / f"{item_id}_{filename}"
+    try:
+        from docx import Document
+        doc = Document(str(file_path))
+        text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        text_cache.write_text(text)
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(500, f"Text extraction failed: {e}")
+
+
 @router.get("/{item_id}/file")
 async def download_file(item_id: int, db: Session = Depends(get_db)):
     """Download raw assignment file (.docx). Cached after first fetch."""

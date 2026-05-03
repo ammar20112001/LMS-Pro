@@ -58,7 +58,6 @@ Pure solution only."""
 
 def format_for_upload(
     question: str,
-    solution: str,
     roll_number: str,
     student_name: str,
     course_name: str,
@@ -67,37 +66,47 @@ def format_for_upload(
     Returns dict with:
       filename: str  (without extension)
       extension: str
-      code: str      (Python code; expects `output_path` variable already defined)
+      code: str      (Python 3 code; `output_path` and `solution_text` are pre-injected)
     """
     default_filename = f"{roll_number}_{course_name}"
 
-    system = f"""You are an expert Python developer helping a student format their assignment for submission.
+    system = f"""You are a Python developer. Write Python 3 code that saves a student's assignment solution to a file.
 
-Analyze the assignment question to determine:
-1. Required file format/extension (default: docx if not specified)
-2. Required filename without extension (default: {default_filename} if not specified)
-3. Whether student metadata (name, roll number) should appear in the document body
+Two variables are already defined when your code runs — do NOT redefine them:
+- `output_path`: the file path where you must save the file (a string)
+- `solution_text`: the student's complete solution text (a string)
 
-Then write Python code that:
-- Saves the file to the path stored in the variable `output_path` (already defined — do NOT redefine it)
-- Uses python-docx for .docx files, plain open() for .txt/.py, appropriate lib for others
-- Wraps the solution in proper document structure
-- Includes student name/roll number in the document ONLY if the assignment explicitly requires it
+Your code must:
+1. Determine the correct file format from the assignment question (default: .docx)
+2. Create the document at `output_path` using `solution_text` as the content
+3. For .docx files: use python-docx (`from docx import Document`)
+4. For .txt or .py files: use `open(output_path, 'w', encoding='utf-8')`
+5. Include student name/roll number in the document header ONLY if the assignment explicitly requires it
 
-Return ONLY valid JSON, no markdown, no explanation:
-{{"filename": "filename_without_extension", "extension": "docx", "code": "python code as single string with \\n for newlines"}}"""
+Example for a .docx output:
+```
+from docx import Document
+doc = Document()
+doc.add_heading('{course_name} Assignment', 0)
+doc.add_paragraph(solution_text)
+doc.save(output_path)
+```
+
+Return ONLY valid JSON with exactly these three keys — no markdown fences, no explanation:
+{{"filename": "name_without_extension", "extension": "docx", "code": "python 3 code with \\n for newlines"}}
+
+The default filename is: {default_filename}"""
 
     user = f"""Assignment Question:
 {question}
 
-Student's Solution:
-{solution}
-
 Student Name: {student_name}
 Roll Number: {roll_number}
-Course: {course_name}"""
+Course: {course_name}
 
-    raw = _call_claude(system, user, max_tokens=2048)
+What file format does this assignment require? Write Python code to create that file using `solution_text`."""
+
+    raw = _call_claude(system, user, max_tokens=1024)
 
     # Strip markdown fences if Claude wraps the JSON
     if "```json" in raw:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { parseISO } from "date-fns";
 import { Item, Course } from "../api/client";
 
@@ -71,7 +71,19 @@ function InlineFileViewer({ itemId, title }: { itemId: number; title: string }) 
 export function AssignmentDetail({ item, course, onBack }: Props) {
   const [viewingFile, setViewingFile] = useState(false);
   const [question, setQuestion] = useState("");
+  const [questionLoading, setQuestionLoading] = useState(false);
   const [solution, setSolution] = useState("");
+
+  // Auto-load question text from the assignment file
+  useEffect(() => {
+    if (!item.file_url) return;
+    setQuestionLoading(true);
+    fetch(`${API}/api/items/${item.id}/text`)
+      .then((r) => r.json())
+      .then((d) => { if (d.text) setQuestion(d.text); })
+      .catch(() => {})
+      .finally(() => setQuestionLoading(false));
+  }, [item.id, item.file_url]);
 
   // AI state
   const [hintLoading, setHintLoading] = useState(false);
@@ -282,15 +294,18 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
               <path d="M7.5 2a5.5 5.5 0 100 11A5.5 5.5 0 007.5 2zm0 3v2.5m0 2.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
             Assignment Question
-            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: "0.5rem" }}>— paste or type for AI context</span>
+            {questionLoading && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: "0.5rem" }}>— loading from file…</span>}
+            {!questionLoading && item.file_url && question && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: "0.5rem" }}>— loaded from file · edit if needed</span>}
+            {!questionLoading && !item.file_url && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: "0.5rem" }}>— paste or type for AI context</span>}
           </h3>
           <textarea
             className="solution-textarea"
-            style={{ minHeight: 80, fontSize: 13 }}
-            placeholder="Paste the assignment question here so AI can understand what to solve…"
+            style={{ minHeight: 80, fontSize: 13, opacity: questionLoading ? 0.5 : 1 }}
+            placeholder={questionLoading ? "Loading question from assignment file…" : "Paste the assignment question here so AI can understand what to solve…"}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            rows={3}
+            rows={4}
+            readOnly={questionLoading}
           />
         </section>
 
