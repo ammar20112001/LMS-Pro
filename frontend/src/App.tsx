@@ -5,6 +5,7 @@ import { CoursePage } from "./pages/CoursePage";
 import { CoursesPage } from "./pages/CoursesPage";
 import { HandoutReader } from "./pages/HandoutReader";
 import { AssignmentDetail } from "./pages/AssignmentDetail";
+import AssignmentWorkspace from "./pages/AssignmentWorkspace";
 import { QuizDetail } from "./pages/QuizDetail";
 import { GDBDetail } from "./pages/GDBDetail";
 import { PipelinePage } from "./pages/PipelinePage";
@@ -202,7 +203,13 @@ export default function App() {
       );
     }
     if (drill.type === "assignment") {
-      return <AssignmentDetail item={drill.item} course={drill.course} onBack={handleBack} />;
+      return (
+        <AssignmentWorkspace
+          item={drill.item}
+          course={drill.course}
+          onBack={handleBack}
+        />
+      );
     }
     if (drill.type === "quiz") {
       return <QuizDetail item={drill.item} course={drill.course} onBack={handleBack} />;

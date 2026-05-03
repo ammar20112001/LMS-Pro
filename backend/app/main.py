@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import engine, Base
-from .api import courses, items, sync
+from .api import courses, items, sync, assignments
 from .api.courses import notes_router, study_router
 from .jobs import scheduler
 
@@ -39,6 +39,7 @@ app.include_router(items.router)
 app.include_router(sync.router)
 app.include_router(notes_router)
 app.include_router(study_router)
+app.include_router(assignments.router)
 
 
 @app.get("/api/health")

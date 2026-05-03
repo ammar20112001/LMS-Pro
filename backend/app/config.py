@@ -11,6 +11,7 @@ class Settings:
     username: str = _env.get("username", "")
     password: str = _env.get("password", "")
     roll_number: str = _env.get("roll_number", "")
+    student_name: str = _env.get("student_name", "")
 
     # Storage
     data_dir: Path = Path.home() / ".lms-pro"

@@ -184,3 +184,17 @@ export interface StudyGuideData {
 
 export const fetchStudyGuide = (): Promise<StudyGuideData> =>
   api.get("/api/study/guide").then((r) => r.data);
+
+// ── Phase 3: Assignment Workspace ─────────────────────────────────────────────
+
+export const getHint = (itemId: number, question: string, solutionSoFar: string) =>
+  api.post(`/api/assignments/${itemId}/hint`, { question, solution_so_far: solutionSoFar }).then((r) => r.data as { hint: string });
+
+export const completeWithAI = (itemId: number, question: string) =>
+  api.post(`/api/assignments/${itemId}/complete`, { question }).then((r) => r.data as { solution: string });
+
+export const formatForUpload = (itemId: number, question: string, solution: string) =>
+  api.post(`/api/assignments/${itemId}/format`, { question, solution }).then((r) => r.data as { filename: string; file_url: string });
+
+export const submitAssignment = (itemId: number, filename: string) =>
+  api.post(`/api/assignments/${itemId}/submit`, { filename }).then((r) => r.data as { status: string; message: string });
