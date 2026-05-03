@@ -348,6 +348,95 @@ class VULMSScraper:
         return yt_id
 
     @staticmethod
+    def _extract_all_yt_ids(text: str) -> list[str]:
+        """Extract all YouTube video IDs from a page (one per video tab)."""
+        results = []
+        # Primary: ASP.NET hidden fields hfVideoID0, hfVideoID1, hfVideoID2…
+        for m in re.finditer(r'id="hfVideoID(\d+)"[^>]*value="([A-Za-z0-9_-]{11})"', text):
+            idx = int(m.group(1))
+            while len(results) <= idx:
+                results.append(None)
+            results[idx] = m.group(2)
+        # Also try reversed attribute order
+        for m in re.finditer(r'value="([A-Za-z0-9_-]{11})"[^>]*id="hfVideoID(\d+)"', text):
+            idx = int(m.group(2))
+            while len(results) <= idx:
+                results.append(None)
+            if not results[idx]:
+                results[idx] = m.group(1)
+        # Fallback: any youtube embed URLs (in order of appearance)
+        if not any(results):
+            embeds = re.findall(r'youtube\.com/embed/([A-Za-z0-9_-]{11})', text)
+            results = list(dict.fromkeys(embeds))  # deduplicate preserving order
+        return [r for r in results if r]  # filter out None gaps
+
+    async def get_lecture_all_video_urls(
+        self, course: "CourseDTO", week: int, lms_index: int
+    ) -> list[str]:
+        """
+        Click a lecture button and extract ALL YouTube IDs (one per video tab).
+        Returns a list: ["ytid1", "ytid2", "NONE"] where "NONE" means tab exists but no ID found.
+        Empty list means the lecture page could not be loaded.
+        """
+        await self._set_course_context(course)
+        await self._goto_section("CourseHome.aspx")
+
+        btn_suffix = f"WeeklySchedule_rptIndex_{week}_lbtnViewLesson_{lms_index}"
+        try:
+            await self._page.click(f"[id$='{btn_suffix}']", timeout=8000)
+        except Exception as e:
+            log.warning("Could not click lecture btn w=%d l=%d: %s", week, lms_index, e)
+            return []
+
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            await self._page.wait_for_timeout(3000)
+
+        # Count video tabs — look for the tab icons with fa-film class
+        html = await self._page.content()
+
+        # How many video tabs does this lesson have?
+        video_tab_count = len(re.findall(
+            r'WeeklySchedule_rptIndex_' + str(week) + r'_rptLessonTab_\d+.*?fa-film',
+            html, re.DOTALL
+        ))
+        if video_tab_count == 0:
+            # Simpler fallback count
+            video_tab_count = len(re.findall(r'hfVideoID\d+', html))
+
+        yt_ids = self._extract_all_yt_ids(html)
+
+        # If we got fewer IDs than tabs, try clicking each tab explicitly
+        if len(yt_ids) < video_tab_count and video_tab_count > 0:
+            tab_buttons = await self._page.query_selector_all(
+                f"[id*='WeeklySchedule_rptIndex_{week}'][id*='lbtnTabVideo']"
+            )
+            for btn in tab_buttons:
+                try:
+                    await btn.click()
+                    await self._page.wait_for_timeout(1500)
+                    tab_html = await self._page.content()
+                    new_ids = self._extract_all_yt_ids(tab_html)
+                    for nid in new_ids:
+                        if nid not in yt_ids:
+                            yt_ids.append(nid)
+                except Exception:
+                    pass
+
+        if not yt_ids:
+            log.warning("No YouTube IDs found for lecture w=%d l=%d", week, lms_index)
+
+        # Navigate back
+        try:
+            await self._page.goto(LMS_HOME, wait_until="networkidle", timeout=15000)
+        except Exception:
+            pass
+
+        log.info("Lecture w=%d l=%d: found %d video(s): %s", week, lms_index, len(yt_ids), yt_ids)
+        return yt_ids
+
+    @staticmethod
     def _extract_yt_id_from_url(text: str) -> str | None:
         """Extract an 11-char YouTube video ID from a URL, src attribute, or raw HTML."""
         if not text:
