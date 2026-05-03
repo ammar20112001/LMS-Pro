@@ -31,7 +31,13 @@ def _call_claude(system: str, user: str, max_tokens: int = 2048) -> str:
     return response.json()["content"][0]["text"]
 
 
-def get_hint(question: str, solution_so_far: str) -> str:
+def _extra(instructions: str) -> str:
+    if instructions.strip():
+        return f"\n\nAdditional instructions from the student:\n{instructions.strip()}"
+    return ""
+
+
+def get_hint(question: str, solution_so_far: str, extra_instructions: str = "") -> str:
     system = """You are a helpful programming tutor. The student is working on a CS assignment.
 Give a concise, specific hint (2-3 sentences max) about what they should do next.
 Do NOT give away the complete answer. Focus on the immediate next concept or step to apply."""
@@ -42,7 +48,7 @@ Do NOT give away the complete answer. Focus on the immediate next concept or ste
 Student's solution so far:
 {solution_so_far.strip() if solution_so_far.strip() else "(nothing written yet)"}
 
-What should the student focus on next?"""
+What should the student focus on next?{_extra(extra_instructions)}"""
 
     return _call_claude(system, user, max_tokens=300)
 
@@ -58,14 +64,14 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
-def complete_solution(question: str, roll_number: str) -> str:
+def complete_solution(question: str, roll_number: str, extra_instructions: str = "") -> str:
     system = f"""You are an expert CS student completing an assignment.
 Your VU roll number is {roll_number} — use it wherever the assignment asks you to perform operations on your roll number (e.g. use digits of roll number as input values, perform calculations on it, etc.).
 Write a complete, correct solution to the assignment question.
 Write ONLY the answer content — no name, roll number headers, file metadata, or submission boilerplate.
 For code assignments: output raw code only, no markdown fences, no explanation."""
 
-    raw = _call_claude(system, f"Assignment:\n\n{question}", max_tokens=4096)
+    raw = _call_claude(system, f"Assignment:\n\n{question}{_extra(extra_instructions)}", max_tokens=4096)
     return _strip_code_fences(raw)
 
 
@@ -74,6 +80,7 @@ def format_for_upload(
     roll_number: str,
     student_name: str,
     course_name: str,
+    extra_instructions: str = "",
 ) -> dict:
     """
     Returns dict with:
@@ -97,6 +104,7 @@ Your code must:
 5. For code files: strip any markdown fences from solution_text before writing. Use this snippet:
    `import re; code = re.sub(r'^```[\\w]*\\n?', '', solution_text.strip(), flags=re.MULTILINE); code = re.sub(r'^```$', '', code, flags=re.MULTILINE); code = code.strip()`
 6. ONLY include student name or roll number in the document if the assignment question EXPLICITLY instructs students to write their name or ID in the file. If not mentioned, omit them entirely.
+7. Write content using the native conventions of the target file format. For example, use real Word headings, paragraphs, and tables in a .docx file — not markdown syntax. Use proper code structure in a .cpp/.py file. Use plain readable text in a .txt file. Never apply formatting idioms from one format to another (e.g., no `# Heading` or `| col |` in a Word document).
 
 Example for a .docx output:
 ```
@@ -119,7 +127,7 @@ Student Name: {student_name}
 Roll Number: {roll_number}
 Course: {course_name}
 
-What file format does this assignment require? Write Python code to create that file using `solution_text`."""
+What file format does this assignment require? Write Python code to create that file using `solution_text`.{_extra(extra_instructions)}"""
 
     raw = _call_claude(system, user, max_tokens=1024)
 

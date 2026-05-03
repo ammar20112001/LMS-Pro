@@ -85,6 +85,9 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       .finally(() => setQuestionLoading(false));
   }, [item.id, item.file_url]);
 
+  // Shared AI instructions
+  const [aiInstructions, setAiInstructions] = useState("");
+
   // AI state
   const [hintLoading, setHintLoading] = useState(false);
   const [hint, setHint] = useState("");
@@ -115,7 +118,7 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       const res = await fetch(`${API}/api/assignments/${item.id}/hint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, solution_so_far: solution }),
+        body: JSON.stringify({ question, solution_so_far: solution, extra_instructions: aiInstructions }),
       });
       const data = await res.json();
       setHint(data.hint ?? "Could not reach AI.");
@@ -133,7 +136,7 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       const res = await fetch(`${API}/api/assignments/${item.id}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, extra_instructions: aiInstructions }),
       });
       const data = await res.json();
       setSolution(data.solution ?? solution);
@@ -153,7 +156,7 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
       const res = await fetch(`${API}/api/assignments/${item.id}/format`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, solution }),
+        body: JSON.stringify({ question, solution, extra_instructions: aiInstructions }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -348,6 +351,16 @@ export function AssignmentDetail({ item, course, onBack }: Props) {
               <button className="btn-dismiss" onClick={() => setCompleteDone(false)}>OK</button>
             </div>
           )}
+
+          {/* Custom AI instructions */}
+          <textarea
+            className="solution-textarea"
+            style={{ minHeight: 48, fontSize: 12, marginTop: "0.75rem", color: "var(--text2)" }}
+            placeholder="Optional: custom instructions for all AI actions — e.g. keep code beginner-level, use specific algorithm, focus on part 2 only…"
+            value={aiInstructions}
+            onChange={(e) => setAiInstructions(e.target.value)}
+            rows={2}
+          />
 
           {/* Action bar */}
           <div className="solution-ai-bar">

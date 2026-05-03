@@ -25,15 +25,18 @@ TMP_DIR = Path("/tmp/lms-pro")
 class HintRequest(BaseModel):
     question: str
     solution_so_far: str = ""
+    extra_instructions: str = ""
 
 
 class CompleteRequest(BaseModel):
     question: str
+    extra_instructions: str = ""
 
 
 class FormatRequest(BaseModel):
     question: str
     solution: str
+    extra_instructions: str = ""
 
 
 class SubmitRequest(BaseModel):
@@ -60,7 +63,7 @@ def _course_code(item: Item, db: Session) -> str:
 def hint(item_id: int, req: HintRequest, db: Session = Depends(get_db)):
     _get_item(item_id, db)
     try:
-        result = get_hint(req.question, req.solution_so_far)
+        result = get_hint(req.question, req.solution_so_far, req.extra_instructions)
         return {"hint": result}
     except Exception as e:
         log.exception("Hint failed for item %d", item_id)
@@ -71,7 +74,7 @@ def hint(item_id: int, req: HintRequest, db: Session = Depends(get_db)):
 def complete(item_id: int, req: CompleteRequest, db: Session = Depends(get_db)):
     _get_item(item_id, db)
     try:
-        result = complete_solution(req.question, roll_number=settings.roll_number)
+        result = complete_solution(req.question, roll_number=settings.roll_number, extra_instructions=req.extra_instructions)
         return {"solution": result}
     except Exception as e:
         log.exception("Complete failed for item %d", item_id)
@@ -89,6 +92,7 @@ def format_solution(item_id: int, req: FormatRequest, db: Session = Depends(get_
             roll_number=settings.roll_number,
             student_name=settings.student_name,
             course_name=course_code,
+            extra_instructions=req.extra_instructions,
         )
     except Exception as e:
         log.exception("Format AI call failed for item %d", item_id)
