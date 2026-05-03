@@ -57,9 +57,13 @@ class LectureNotesOut(BaseModel):
     title: str
     notes_md: Optional[str] = None
     notes_status: str
+    transcript_raw: Optional[str] = None
+    transcript_en: Optional[str] = None
     transcript_quality: Optional[str] = None
     transcript_source: Optional[str] = None
+    transcript_retries: Optional[int] = 0
     notes_generated_at: Optional[datetime] = None
+    youtube_id: Optional[str] = None
 
     class Config:
         from_attributes = True

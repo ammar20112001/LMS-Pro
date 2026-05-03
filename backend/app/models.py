@@ -74,13 +74,37 @@ class Lecture(Base):
     # Phase 2 — notes pipeline
     youtube_id = Column(String(20), nullable=True)
     transcript_raw = Column(Text, nullable=True)
+    transcript_en = Column(Text, nullable=True)             # English translation of transcript
     transcript_source = Column(String(20), nullable=True)   # youtube_auto | whisper_local
     transcript_quality = Column(String(10), nullable=True)  # ok | poor | unavailable
+    transcript_retries = Column(Integer, default=0)
     notes_md = Column(Text, nullable=True)
     notes_generated_at = Column(DateTime(timezone=True), nullable=True)
-    notes_status = Column(String(20), default="pending")    # pending | transcribing | generating | done | failed
+    notes_status = Column(String(20), default="pending")    # pending | transcribing | transcribed | generating | done | failed
+
+    video_count = Column(Integer, default=1)
+    videos_scraped = Column(Boolean, default=False)  # True once sync has confirmed video tab count
+    videos = relationship("LectureVideo", back_populates="lecture", order_by="LectureVideo.seq", cascade="all, delete-orphan")
 
     course = relationship("Course", back_populates="lectures")
+
+
+class LectureVideo(Base):
+    __tablename__ = "lecture_videos"
+    id = Column(Integer, primary_key=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id"), nullable=False)
+    seq = Column(Integer, default=1)          # 1-based: first video, second video, etc.
+    youtube_id = Column(String(20), nullable=True)   # None=unchecked, "NONE"=not on YT
+    transcript_raw = Column(Text, nullable=True)
+    transcript_en = Column(Text, nullable=True)
+    transcript_source = Column(String(20), nullable=True)
+    transcript_quality = Column(String(10), nullable=True)
+    transcript_retries = Column(Integer, default=0)
+    notes_md = Column(Text, nullable=True)
+    notes_generated_at = Column(DateTime(timezone=True), nullable=True)
+    notes_status = Column(String(20), default="pending")
+
+    lecture = relationship("Lecture", back_populates="videos")
 
 
 class CourseProgress(Base):
