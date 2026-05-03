@@ -168,9 +168,9 @@ Course: {course_name}
 What file format does this assignment require? Write Python code to create that file using `solution_text`.{_extra(extra_instructions)}{images_note}"""
 
     if image_paths:
-        raw = _call_claude_vision(system, user, image_paths, max_tokens=1024)
+        raw = _call_claude_vision(system, user, image_paths, max_tokens=2048)
     else:
-        raw = _call_claude(system, user, max_tokens=1024)
+        raw = _call_claude(system, user, max_tokens=2048)
 
     # Strip markdown fences if Claude wraps the JSON
     if "```json" in raw:
