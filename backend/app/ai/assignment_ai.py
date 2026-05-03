@@ -136,8 +136,9 @@ Your code must:
 2. Create the document at `output_path` using `solution_text` as the content
 3. For .docx files: use python-docx (`from docx import Document`)
 4. For code files (.cpp, .c, .py, .java, .cs, etc.) and .txt: use `open(output_path, 'w', encoding='utf-8')`
-5. For code files: strip any markdown fences from solution_text before writing. Use this snippet:
-   `import re; code = re.sub(r'^```[\\w]*\\n?', '', solution_text.strip(), flags=re.MULTILINE); code = re.sub(r'^```$', '', code, flags=re.MULTILINE); code = code.strip()`
+5. For code files: ALWAYS use `solution_text` directly — NEVER copy or paste the actual solution code into your Python code string. The correct pattern is exactly:
+   `import re; clean = re.sub(r"^\`\`\`[\\w]*\\n?", "", solution_text.strip(), flags=re.MULTILINE); clean = re.sub(r"^\`\`\`$", "", clean, flags=re.MULTILINE).strip()\nwith open(output_path, "w", encoding="utf-8") as f:\n    f.write(clean)`
+   Writing the actual solution code inline would break the JSON — use the variable.
 6. ONLY include student name or roll number in the document if the assignment question EXPLICITLY instructs students to write their name or ID in the file. If not mentioned, omit them entirely.
 7. Write content using the native conventions of the target file format. For example, use real Word headings, paragraphs, and tables in a .docx file — not markdown syntax. Use proper code structure in a .cpp/.py file. Use plain readable text in a .txt file. Never apply formatting idioms from one format to another (e.g., no `# Heading` or `| col |` in a Word document).
 8. The variable `image_paths` is a pre-defined Python list of file paths to screenshots provided by the student. For document formats (.docx): embed each image at a contextually appropriate place using `from docx.shared import Inches` and `doc.add_picture(p, width=Inches(5.5))`. For code files (.cpp, .c, .py, .java, etc.): images CANNOT be embedded in source code — ignore `image_paths` entirely and just write the solution code to the file. The screenshots were provided for your visual context only.
@@ -149,6 +150,15 @@ doc = Document()
 doc.add_heading('{course_name} Assignment', 0)
 doc.add_paragraph(solution_text)
 doc.save(output_path)
+```
+
+Example for a .cpp output (strip fences, write variable — never inline the code):
+```
+import re
+clean = re.sub(r"^```[\\w]*\\n?", "", solution_text.strip(), flags=re.MULTILINE)
+clean = re.sub(r"^```$", "", clean, flags=re.MULTILINE).strip()
+with open(output_path, "w", encoding="utf-8") as f:
+    f.write(clean)
 ```
 
 Return ONLY valid JSON with exactly these three keys — no markdown fences, no explanation:
@@ -178,4 +188,24 @@ What file format does this assignment require? Write Python code to create that 
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
 
-    return json.loads(raw.strip())
+    raw = raw.strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Claude embedded solution code directly in the JSON, breaking string escaping.
+        # Extract filename/extension with regex and use a safe fallback code snippet.
+        import re as _re
+        fn_match = _re.search(r'"filename"\s*:\s*"([^"]*)"', raw)
+        ext_match = _re.search(r'"extension"\s*:\s*"([^"]*)"', raw)
+        filename = fn_match.group(1) if fn_match else default_filename
+        extension = ext_match.group(1) if ext_match else "cpp"
+        # Safe fallback: strip fences from solution_text and write it
+        fallback_code = (
+            'import re\n'
+            'clean = re.sub(r"^```[\\w]*\\n?", "", solution_text.strip(), flags=re.MULTILINE)\n'
+            'clean = re.sub(r"^```$", "", clean, flags=re.MULTILINE).strip()\n'
+            'with open(output_path, "w", encoding="utf-8") as f:\n'
+            '    f.write(clean)\n'
+        )
+        log.warning("JSON parse failed for format response; using fallback code writer")
+        return {"filename": filename, "extension": extension, "code": fallback_code}
