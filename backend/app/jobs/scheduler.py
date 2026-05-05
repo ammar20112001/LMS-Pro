@@ -8,6 +8,7 @@ from ..config import settings
 from .notify_job import run_notify, run_digest
 from .notes_job import run_notes_job
 from .deadline_calendar_job import run_deadline_calendar_job
+from .youtube_job import run_youtube_job
 
 log = logging.getLogger(__name__)
 
@@ -79,9 +80,17 @@ def start():
         coalesce=True,
     )
 
+    _scheduler.add_job(
+        run_youtube_job,
+        trigger=IntervalTrigger(minutes=2),
+        id="youtube_extraction",
+        name="YouTube Video Extraction",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     log.info(
-        "Scheduler started — sync every %d min, notify every 5 min, digest at %d:00, notes every %d min",
+        "Scheduler started — sync every %d min, youtube every 2 min, notify every 5 min, digest at %d:00, notes every %d min",
         settings.sync_interval_minutes,
         settings.digest_hour_local,
         settings.notes_interval_minutes,

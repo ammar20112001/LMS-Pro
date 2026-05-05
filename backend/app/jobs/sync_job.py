@@ -115,53 +115,7 @@ async def _sync_course(
     lectures = await scraper.list_lectures(dto)
     _sync_lectures(db, course, lectures)
 
-    # Fill in YouTube IDs for video lectures that don't have one yet (max 5 per sync)
-    await _sync_video_urls(db, scraper, course, dto)
-
     return added, updated
-
-
-async def _sync_video_urls(db: Session, scraper, course, dto) -> None:
-    """Discover video tab counts and upsert LectureVideo rows (non-destructive)."""
-    # Pick up any lecture not yet confirmed for video count, including previously migrated ones
-    pending = (
-        db.query(Lecture)
-        .filter_by(course_id=course.id, has_video=True, videos_scraped=False)
-        .order_by(Lecture.serial_no)
-        .limit(20)
-        .all()
-    )
-
-    for lec in pending:
-        try:
-            yt_ids = await scraper.get_lecture_all_video_urls(dto, lec.week, lec.lms_index)
-            if not yt_ids:
-                log.warning("No video data for lecture %d (%s)", lec.serial_no, lec.title[:40])
-                # Ensure at least a placeholder row exists; don't mark scraped so it retries
-                if not lec.videos:
-                    db.add(LectureVideo(lecture_id=lec.id, seq=1, youtube_id="NONE"))
-            else:
-                lec.video_count = len(yt_ids)
-                existing = {v.seq: v for v in lec.videos}
-                for seq, yt_id in enumerate(yt_ids, start=1):
-                    lv = existing.get(seq)
-                    if lv:
-                        # Already exists from migration — only fill in if still unchecked
-                        if lv.youtube_id is None:
-                            lv.youtube_id = yt_id if yt_id else "NONE"
-                    else:
-                        # New video tab — add without touching existing rows
-                        db.add(LectureVideo(
-                            lecture_id=lec.id,
-                            seq=seq,
-                            youtube_id=yt_id if yt_id else "NONE",
-                        ))
-                lec.videos_scraped = True
-                log.info("Lecture %d: confirmed %d video(s)", lec.serial_no, len(yt_ids))
-        except Exception as e:
-            log.warning("Failed to get video URLs for lecture %d: %s", lec.serial_no, e)
-
-    db.commit()
 
 
 def _upsert_item(db: Session, course: Course, dto: ItemDTO) -> tuple[int, int]:
