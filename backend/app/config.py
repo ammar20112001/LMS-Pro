@@ -19,6 +19,7 @@ class Settings:
     files_dir: Path = Path.home() / ".lms-pro" / "files"
 
     # Email
+    personal_email: str = _env.get("personal_email", "")
     notify_email: str = _env.get("notify_email", "")
     smtp_host: str = _env.get("smtp_host", "smtp.gmail.com")
     smtp_port: int = int(_env.get("smtp_port", "587"))

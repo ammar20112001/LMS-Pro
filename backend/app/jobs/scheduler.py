@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from ..config import settings
 from .notify_job import run_notify, run_digest
 from .notes_job import run_notes_job
+from .deadline_calendar_job import run_deadline_calendar_job, run_midnight_reminder
 
 log = logging.getLogger(__name__)
 
@@ -69,9 +70,27 @@ def start():
         coalesce=True,
     )
 
+    _scheduler.add_job(
+        run_deadline_calendar_job,
+        trigger=IntervalTrigger(hours=1),
+        id="deadline_calendar",
+        name="Deadline Calendar Invites",
+        replace_existing=True,
+        coalesce=True,
+    )
+
+    _scheduler.add_job(
+        run_midnight_reminder,
+        trigger=CronTrigger(hour=23, minute=0),
+        id="midnight_reminder",
+        name="Midnight Deadline Reminder",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     log.info(
-        "Scheduler started — sync every %d min, notify every 5 min, digest at %d:00, notes every %d min",
+        "Scheduler started — sync every %d min, notify every 5 min, digest at %d:00, "
+        "notes every %d min, calendar invites every hour, midnight reminder at 23:00",
         settings.sync_interval_minutes,
         settings.digest_hour_local,
         settings.notes_interval_minutes,
