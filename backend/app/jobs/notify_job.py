@@ -16,6 +16,7 @@ KIND_LABELS = {
     "deadline_72h": "due in 72 hours",
     "deadline_24h": "due in 24 hours",
     "deadline_2h":  "due in 2 hours",
+    "midnight_reminder": "midnight deadline alert",
 }
 
 
@@ -31,6 +32,19 @@ def run_notify():
         log.info("Notification dispatcher: %d pending", len(pending))
 
         for notif in pending:
+            # Handle midnight reminder (no item_id)
+            if notif.kind == "midnight_reminder":
+                body = _render_midnight_reminder_email(db, now)
+                if body:
+                    if send_email("[LMS-Pro] ⏰ Deadlines Due in Under an Hour!", body):
+                        notif.sent_at = now
+                        log.info("Midnight reminder sent")
+                else:
+                    # No items due in next hour, still mark as sent
+                    notif.sent_at = now
+                continue
+
+            # Handle deadline notifications (has item_id)
             item = db.query(Item).get(notif.item_id)
             if not item:
                 notif.sent_at = now
@@ -80,10 +94,10 @@ def run_digest():
 
 
 def _render_deadline_email(item: "Item", label: str, due_str: str) -> str:
-    kind_icon = {"assignment": "📝", "quiz": "🧠", "gdb": "💬"}.get(item.kind, "📌")
+    kind_label = {"assignment": "Assignment", "quiz": "Quiz", "gdb": "Discussion"}.get(item.kind, "Item")
     return f"""
 <html><body style="font-family:sans-serif;max-width:600px;margin:auto">
-  <h2 style="color:#e74c3c">{kind_icon} {item.kind.title()} Due Soon</h2>
+  <h2 style="color:#e74c3c">{kind_label} Due Soon</h2>
   <table style="width:100%;border-collapse:collapse">
     <tr><td style="padding:8px;font-weight:bold">Course</td>
         <td style="padding:8px">{item.course.code} — {item.course.title}</td></tr>
@@ -95,6 +109,54 @@ def _render_deadline_email(item: "Item", label: str, due_str: str) -> str:
         <td style="padding:8px">{item.total_marks or "—"}</td></tr>
   </table>
   <p style="color:#666;font-size:12px;margin-top:20px">LMS-Pro</p>
+</body></html>"""
+
+
+def _render_midnight_reminder_email(db, now: "datetime") -> str:
+    from datetime import timedelta
+    window_end = now + timedelta(hours=1)
+
+    due_soon = (
+        db.query(Item)
+        .filter(
+            Item.due_at >= now,
+            Item.due_at <= window_end,
+            Item.completed_at.is_(None),
+        )
+        .order_by(Item.due_at)
+        .all()
+    )
+
+    if not due_soon:
+        return None
+
+    rows = []
+    for item in due_soon:
+        kind_label = {"assignment": "Assignment", "quiz": "Quiz", "gdb": "Discussion"}.get(item.kind, "Item")
+        due_str = item.due_at.strftime("%I:%M %p") if item.due_at else "—"
+        rows.append(f"""
+            <tr>
+              <td style="padding:8px;border-bottom:1px solid #eee">{item.course.code}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee">{kind_label}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee">{item.title}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee;color:#e74c3c;font-weight:bold">{due_str}</td>
+            </tr>""")
+
+    return f"""<html><body style="font-family:sans-serif;max-width:700px;margin:auto">
+  <h2 style="color:#e74c3c">Deadline Alert — Due Within the Hour</h2>
+  <p>{len(due_soon)} item(s) are due before midnight tonight:</p>
+  <table style="width:100%;border-collapse:collapse;font-size:14px">
+    <thead>
+      <tr style="background:#c0392b;color:white">
+        <th style="padding:8px;text-align:left">Course</th>
+        <th style="padding:8px;text-align:left">Type</th>
+        <th style="padding:8px;text-align:left">Title</th>
+        <th style="padding:8px;text-align:left">Due At</th>
+      </tr>
+    </thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+  <p style="margin-top:16px;color:#666;font-size:12px">LMS-Pro — sent at 23:00</p>
 </body></html>"""
 
 
