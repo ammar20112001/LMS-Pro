@@ -198,3 +198,53 @@ export const formatForUpload = (itemId: number, question: string, solution: stri
 
 export const submitAssignment = (itemId: number, filename: string) =>
   api.post(`/api/assignments/${itemId}/submit`, { filename }).then((r) => r.data as { status: string; message: string });
+
+// ── Phase 3B: Study Canvas ─────────────────────────────────────────────────────
+
+export interface CanvasCourse {
+  course_code: string;
+  total_chunks: number;
+  enriched_chunks: number;
+}
+
+export interface CanvasChunkSummary {
+  id: number;
+  lecture_no: number;
+  title: string;
+  enrich_status: string;
+  enriched_at: string | null;
+  image_count: number;
+}
+
+export interface CanvasImage {
+  seq: number;
+  url: string;
+}
+
+export interface CanvasChunk {
+  id: number;
+  course_code: string;
+  lecture_no: number;
+  title: string;
+  enrich_status: string;
+  enriched_md: string | null;
+  enriched_at: string | null;
+  page_start: number;
+  page_end: number;
+  images: CanvasImage[];
+}
+
+export const fetchCanvasCourses = (): Promise<CanvasCourse[]> =>
+  api.get("/api/study-canvas/courses").then((r) => r.data);
+
+export const fetchCanvasChunks = (courseCode: string): Promise<CanvasChunkSummary[]> =>
+  api.get(`/api/study-canvas/${courseCode}/chunks`).then((r) => r.data);
+
+export const fetchCanvasChunk = (chunkId: number): Promise<CanvasChunk> =>
+  api.get(`/api/study-canvas/chunks/${chunkId}`).then((r) => r.data);
+
+export const enrichWithSonnet = (chunkId: number, instructions: string): Promise<{ status: string }> =>
+  api.post(`/api/study-canvas/chunks/${chunkId}/enrich`, { instructions }).then((r) => r.data);
+
+export const triggerHandoutIngest = (): Promise<{ status: string }> =>
+  api.post("/api/study-canvas/ingest").then((r) => r.data);

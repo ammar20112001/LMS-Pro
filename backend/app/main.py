@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import engine, Base
 from .api import courses, items, sync, assignments
 from .api.courses import notes_router, study_router
+from .api.study_canvas import router as study_canvas_router
 from .jobs import scheduler
 
 logging.basicConfig(
@@ -40,6 +41,7 @@ app.include_router(sync.router)
 app.include_router(notes_router)
 app.include_router(study_router)
 app.include_router(assignments.router)
+app.include_router(study_canvas_router)
 
 
 @app.get("/api/health")

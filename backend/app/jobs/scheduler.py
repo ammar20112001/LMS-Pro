@@ -9,6 +9,7 @@ from .notify_job import run_notify, run_digest
 from .notes_job import run_notes_job
 from .deadline_calendar_job import run_deadline_calendar_job
 from .youtube_job import run_youtube_job
+from .handout_job import run_ingestion_job, run_enrichment_job
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +86,33 @@ def start():
         trigger=IntervalTrigger(minutes=2),
         id="youtube_extraction",
         name="YouTube Video Extraction",
+        replace_existing=True,
+    )
+
+    _scheduler.add_job(
+        run_ingestion_job,
+        trigger=IntervalTrigger(hours=1),
+        id="handout_ingestion",
+        name="Handout Ingestion",
+        replace_existing=True,
+        coalesce=True,
+    )
+
+    _scheduler.add_job(
+        run_enrichment_job,
+        trigger=IntervalTrigger(minutes=2),
+        id="handout_enrichment",
+        name="Handout Enrichment",
+        replace_existing=True,
+        coalesce=True,
+    )
+
+    # Run ingestion once on startup
+    _scheduler.add_job(
+        run_ingestion_job,
+        trigger="date",
+        id="handout_ingestion_startup",
+        name="Handout Ingestion (startup)",
         replace_existing=True,
     )
 

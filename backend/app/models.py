@@ -128,6 +128,50 @@ class Notification(Base):
     item: Mapped["Item"] = relationship("Item", back_populates="notifications")
 
 
+class HandoutSource(Base):
+    __tablename__ = "handout_sources"
+
+    id = Column(Integer, primary_key=True)
+    course_code = Column(String(20), nullable=False)
+    file_path = Column(String(1000), nullable=False, unique=True)
+    file_type = Column(String(10), nullable=False)   # pdf | pptx
+    total_chunks = Column(Integer, default=0)
+    ingest_status = Column(String(20), default="pending")  # pending | ingesting | done | failed
+    ingested_at = Column(DateTime(timezone=True), nullable=True)
+
+    chunks = relationship("HandoutChunk", back_populates="source", cascade="all, delete-orphan")
+
+
+class HandoutChunk(Base):
+    __tablename__ = "handout_chunks"
+
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("handout_sources.id"), nullable=False)
+    course_code = Column(String(20), nullable=False)
+    lecture_no = Column(Integer, default=0)
+    title = Column(String(500), nullable=False)
+    raw_text = Column(Text, nullable=True)
+    page_start = Column(Integer, default=0)
+    page_end = Column(Integer, default=0)
+    enriched_md = Column(Text, nullable=True)
+    enriched_at = Column(DateTime(timezone=True), nullable=True)
+    enrich_status = Column(String(20), default="pending")  # pending | enriching | done | failed
+
+    source = relationship("HandoutSource", back_populates="chunks")
+    images = relationship("HandoutImage", back_populates="chunk", order_by="HandoutImage.seq", cascade="all, delete-orphan")
+
+
+class HandoutImage(Base):
+    __tablename__ = "handout_images"
+
+    id = Column(Integer, primary_key=True)
+    chunk_id = Column(Integer, ForeignKey("handout_chunks.id"), nullable=False)
+    seq = Column(Integer, default=1)
+    file_path = Column(String(1000), nullable=False)
+
+    chunk = relationship("HandoutChunk", back_populates="images")
+
+
 class SyncRun(Base):
     __tablename__ = "sync_runs"
 

@@ -9,13 +9,14 @@ import { QuizDetail } from "./pages/QuizDetail";
 import { GDBDetail } from "./pages/GDBDetail";
 import { PipelinePage } from "./pages/PipelinePage";
 import { StudyGuidePage } from "./pages/StudyGuidePage";
+import { StudyCanvasPage } from "./pages/StudyCanvasPage";
 import { Course, Item, Lecture } from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
 
-type Page = "dashboard" | "courses" | "study" | "pipeline" | "chat" | "settings";
+type Page = "dashboard" | "courses" | "study" | "canvas" | "pipeline" | "chat" | "settings";
 
 const NAV = [
   {
@@ -47,6 +48,18 @@ const NAV = [
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M3 2h12a1 1 0 011 1v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
         <path d="M3 10v4a2 2 0 002 2h8a2 2 0 002-2v-4M7 6h4M7 8.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "canvas" as Page,
+    label: "Study Canvas",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <rect x="1" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="10" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="1" y="10" width="16" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M4 4.5h4M13 4.5h2M4 13.5h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
   },
@@ -252,6 +265,10 @@ export default function App() {
 
     if (page === "study") {
       return <StudyGuidePage />;
+    }
+
+    if (page === "canvas") {
+      return <StudyCanvasPage />;
     }
 
     if (page === "pipeline") {
