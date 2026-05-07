@@ -248,3 +248,78 @@ export const enrichWithSonnet = (chunkId: number, instructions: string): Promise
 
 export const triggerHandoutIngest = (): Promise<{ status: string }> =>
   api.post("/api/study-canvas/ingest").then((r) => r.data);
+
+// ── Study Plan ─────────────────────────────────────────────────────────────────
+
+export interface PlanDeadline {
+  item_id: number;
+  title: string;
+  due_at: string;
+  is_past: boolean;
+  is_completed: boolean;
+  days_left: number | null;
+  quiz_number: number | null;
+  total_quizzes: number | null;
+  lecture_range: [number, number] | null;
+  lectures_needed: number;
+  lectures_covered: number;
+  estimated_minutes: number;
+}
+
+export interface TheoryCourse {
+  course_code: string;
+  course_title: string;
+  current_lecture: number;
+  total_lectures: number;
+  backlog_lectures: number;
+  deadlines: PlanDeadline[];
+}
+
+export interface PracticalTask {
+  item_id: number;
+  title: string;
+  kind: string;
+  due_at: string;
+  is_past: boolean;
+  is_completed: boolean;
+  days_left: number | null;
+  status: string | null;
+}
+
+export interface PracticalCourse {
+  course_code: string;
+  course_title: string;
+  type: "cpp_runner" | "ai_marked";
+  upcoming: PracticalTask[];
+  past: PracticalTask[];
+}
+
+export interface StudyPlan {
+  theory: TheoryCourse[];
+  practicals: PracticalCourse[];
+}
+
+export const fetchStudyPlan = (): Promise<StudyPlan> =>
+  api.get("/api/study-plan/").then((r) => r.data);
+
+export interface AiMarkResult {
+  marks: number | null;
+  max_marks: number;
+  grade: string;
+  summary: string;
+  strengths: string[];
+  issues: string[];
+  feedback: string;
+}
+
+export const aiMarkSubmission = (
+  itemId: number,
+  taskDescription: string,
+  solution: string,
+  maxMarks?: number
+): Promise<AiMarkResult> =>
+  api.post(`/api/assignments/${itemId}/ai-mark`, {
+    task_description: taskDescription,
+    solution,
+    max_marks: maxMarks ?? 10,
+  }).then((r) => r.data);

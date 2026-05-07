@@ -20,14 +20,24 @@ const STATUS_COLOR: Record<string, string> = {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span style={{
-      fontSize: 11,
-      fontWeight: 600,
-      letterSpacing: "0.04em",
-      color: STATUS_COLOR[status] ?? "var(--text3)",
-      textTransform: "uppercase",
-    }}>
-      {status}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {status === "enriching" && (
+        <span style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: "var(--amber)",
+          display: "inline-block",
+          animation: "pulse 1.2s ease-in-out infinite",
+        }} />
+      )}
+      <span style={{
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.04em",
+        color: STATUS_COLOR[status] ?? "var(--text3)",
+        textTransform: "uppercase",
+      }}>
+        {status}
+      </span>
     </span>
   );
 }
@@ -64,18 +74,31 @@ export function StudyCanvasPage() {
   const { data: courses = [], isLoading: coursesLoading } = useQuery({
     queryKey: ["canvas-courses"],
     queryFn: fetchCanvasCourses,
+    // Poll while any course still has pending chunks
+    refetchInterval: (query) => {
+      const data = query.state.data as CanvasCourse[] | undefined;
+      if (!data) return false;
+      return data.some((c) => c.enriched_chunks < c.total_chunks) ? 8000 : false;
+    },
   });
 
   const { data: chunks = [] } = useQuery({
     queryKey: ["canvas-chunks", selectedCourse],
     queryFn: () => fetchCanvasChunks(selectedCourse!),
     enabled: !!selectedCourse,
+    // Poll while any chunk in this course is pending or enriching
+    refetchInterval: (query) => {
+      const data = query.state.data as CanvasChunkSummary[] | undefined;
+      if (!data) return false;
+      return data.some((c) => c.enrich_status === "pending" || c.enrich_status === "enriching") ? 4000 : false;
+    },
   });
 
   const { data: chunk, isLoading: chunkLoading } = useQuery({
     queryKey: ["canvas-chunk", selectedChunkId],
     queryFn: () => fetchCanvasChunk(selectedChunkId!),
     enabled: !!selectedChunkId,
+    // Poll at 3s when enriching, then stop
     refetchInterval: (query) =>
       (query.state.data as CanvasChunk | undefined)?.enrich_status === "enriching" ? 3000 : false,
   });
@@ -95,12 +118,19 @@ export function StudyCanvasPage() {
     },
   });
 
-  // Auto-select first course
+  // Auto-select: honour cross-page hint, else first course
   useEffect(() => {
-    if (courses.length > 0 && !selectedCourse) {
-      setSelectedCourse(courses[0].course_code);
+    if (courses.length === 0) return;
+    const hint = sessionStorage.getItem("canvas_select_course");
+    if (hint) {
+      sessionStorage.removeItem("canvas_select_course");
+      if (courses.find((c) => c.course_code === hint)) {
+        setSelectedCourse(hint);
+        return;
+      }
     }
-  }, [courses, selectedCourse]);
+    if (!selectedCourse) setSelectedCourse(courses[0].course_code);
+  }, [courses]);
 
   // Auto-select first chunk
   useEffect(() => {
@@ -409,6 +439,10 @@ export function StudyCanvasPage() {
       </div>
 
       <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.7); }
+        }
         .canvas-md h1 { font-size: 1.4rem; font-weight: 700; margin: 1.2rem 0 0.5rem; color: var(--text); }
         .canvas-md h2 { font-size: 1.1rem; font-weight: 700; margin: 1rem 0 0.4rem; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
         .canvas-md h3 { font-size: 0.95rem; font-weight: 600; margin: 0.8rem 0 0.3rem; color: var(--accent); }

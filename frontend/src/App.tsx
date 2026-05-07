@@ -10,13 +10,14 @@ import { GDBDetail } from "./pages/GDBDetail";
 import { PipelinePage } from "./pages/PipelinePage";
 import { StudyGuidePage } from "./pages/StudyGuidePage";
 import { StudyCanvasPage } from "./pages/StudyCanvasPage";
+import { StudyPlanPage } from "./pages/StudyPlanPage";
 import { Course, Item, Lecture } from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
 
-type Page = "dashboard" | "courses" | "study" | "canvas" | "pipeline" | "chat" | "settings";
+type Page = "dashboard" | "courses" | "study" | "canvas" | "plan" | "pipeline" | "chat" | "settings";
 
 const NAV = [
   {
@@ -48,6 +49,17 @@ const NAV = [
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M3 2h12a1 1 0 011 1v7a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
         <path d="M3 10v4a2 2 0 002 2h8a2 2 0 002-2v-4M7 6h4M7 8.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "plan" as Page,
+    label: "Study Plan",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M6 7h6M6 10h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M5 5l1 1-1 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
   },
@@ -269,6 +281,18 @@ export default function App() {
 
     if (page === "canvas") {
       return <StudyCanvasPage />;
+    }
+
+    if (page === "plan") {
+      return (
+        <StudyPlanPage
+          onOpenCanvas={(code) => {
+            setPage("canvas");
+            // StudyCanvasPage auto-selects on mount — pass code via a small trick
+            sessionStorage.setItem("canvas_select_course", code);
+          }}
+        />
+      );
     }
 
     if (page === "pipeline") {

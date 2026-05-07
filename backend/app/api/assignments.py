@@ -49,6 +49,12 @@ class SubmitRequest(BaseModel):
     filename: str
 
 
+class AiMarkRequest(BaseModel):
+    task_description: str       # what the task asks for
+    solution: str               # student's submitted solution text
+    max_marks: int = 10
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_item(item_id: int, db: Session) -> Item:
@@ -249,6 +255,47 @@ def download_file(item_id: int, filename: str):
     if not file_path.exists():
         raise HTTPException(404, "File not found — generate it first")
     return FileResponse(str(file_path), filename=filename)
+
+
+@router.post("/{item_id}/ai-mark")
+def ai_mark(item_id: int, req: AiMarkRequest, db: Session = Depends(get_db)):
+    """Grade a practical submission using Haiku. Returns marks, feedback, and breakdown."""
+    item = _get_item(item_id, db)
+    from ..ai.assignment_ai import _call_claude, HAIKU
+    import json
+
+    system = (
+        "You are a strict but fair university practical examiner. "
+        "Evaluate the student's submission against the task requirements. "
+        "Return ONLY valid JSON in this exact format: "
+        '{"marks": <int>, "max_marks": <int>, "grade": "<A/B/C/D/F>", '
+        '"summary": "<one sentence verdict>", '
+        '"strengths": ["<point>"], "issues": ["<point>"], '
+        '"feedback": "<detailed paragraph>"}'
+    )
+    prompt = (
+        f"Task: {req.task_description}\n\n"
+        f"Max marks: {req.max_marks}\n\n"
+        f"Student submission:\n{req.solution}"
+    )
+    raw = _call_claude(system, prompt, max_tokens=1024)
+
+    # Parse JSON — fall back to plain text if model doesn't cooperate
+    try:
+        start = raw.index("{")
+        end = raw.rindex("}") + 1
+        result = json.loads(raw[start:end])
+    except Exception:
+        result = {
+            "marks": None,
+            "max_marks": req.max_marks,
+            "grade": "?",
+            "summary": "Could not parse AI response.",
+            "strengths": [],
+            "issues": [],
+            "feedback": raw,
+        }
+    return result
 
 
 @router.post("/{item_id}/submit")
