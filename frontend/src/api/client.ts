@@ -299,8 +299,31 @@ export interface StudyPlan {
   practicals: PracticalCourse[];
 }
 
+export interface PlanLecture {
+  serial_no: number;
+  title: string;
+  urgency: "done" | "behind" | "soon" | "later";
+  estimated_minutes: number;
+  chunk_id: number | null;
+  deadline_title?: string;
+}
+
+export interface PlaygroundGroup {
+  behind: PlanLecture[];
+  soon: PlanLecture[];
+  later: PlanLecture[];
+}
+
+export interface TheoryCourseFull extends TheoryCourse {
+  deadlines: (PlanDeadline & { lectures: PlanLecture[] })[];
+  playground: PlaygroundGroup;
+}
+
 export const fetchStudyPlan = (): Promise<StudyPlan> =>
   api.get("/api/study-plan/").then((r) => r.data);
+
+export const fetchCoursePlan = (courseCode: string): Promise<TheoryCourseFull> =>
+  api.get(`/api/study-plan/${courseCode}`).then((r) => r.data);
 
 export interface AiMarkResult {
   marks: number | null;

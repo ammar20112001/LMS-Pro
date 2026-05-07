@@ -177,6 +177,88 @@ def _build_practical(db, course: Course, now: datetime, ptype: str) -> dict:
     }
 
 
+@router.get("/{course_code}")
+def get_course_plan(course_code: str):
+    """Full plan for one theory course with per-lecture breakdown — used by Playground."""
+    from fastapi import HTTPException
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        course = db.query(Course).filter_by(code=course_code).first()
+        if not course or course_code not in THEORY:
+            raise HTTPException(status_code=404, detail="Course not found or not a theory course")
+
+        plan = _build_theory_plan(db, course, now)
+
+        # Enrich each quiz deadline with per-lecture rows
+        lec_by_serial: dict[int, Lecture] = {l.serial_no: l for l in course.lectures}
+        chunk_by_lec: dict[int, int] = {}  # lecture_no → chunk_id
+        for chunk in db.query(HandoutChunk).filter_by(course_code=course_code).all():
+            chunk_by_lec[chunk.lecture_no] = chunk.id
+
+        current = plan["current_lecture"]
+
+        for dl in plan["deadlines"]:
+            if dl["lecture_range"] is None:
+                dl["lectures"] = []
+                continue
+            lec_start, lec_end = dl["lecture_range"]
+            is_past = dl["is_past"]
+            days_left = dl["days_left"]
+
+            rows = []
+            for sno in range(lec_start, lec_end + 1):
+                lec = lec_by_serial.get(sno)
+                title = lec.title if lec else f"Lecture {sno}"
+                chunk_id = chunk_by_lec.get(sno)
+                est = _lecture_minutes(db, course_code, sno, chunk_id)
+
+                if sno <= current:
+                    urgency = "done"
+                elif is_past:
+                    urgency = "behind"
+                elif days_left is not None and days_left <= 7:
+                    urgency = "soon"
+                else:
+                    urgency = "later"
+
+                rows.append({
+                    "serial_no": sno,
+                    "title": title,
+                    "urgency": urgency,
+                    "estimated_minutes": est,
+                    "chunk_id": chunk_id,
+                })
+            dl["lectures"] = rows
+
+        # Playground grouping — flat list of all uncovered lectures by urgency
+        behind, soon, later = [], [], []
+        for dl in plan["deadlines"]:
+            for lec in dl.get("lectures", []):
+                if lec["urgency"] == "behind":
+                    behind.append({**lec, "deadline_title": dl["title"]})
+                elif lec["urgency"] == "soon":
+                    soon.append({**lec, "deadline_title": dl["title"]})
+                elif lec["urgency"] == "later":
+                    later.append({**lec, "deadline_title": dl["title"]})
+
+        plan["playground"] = {"behind": behind, "soon": soon, "later": later}
+        return plan
+    finally:
+        db.close()
+
+
+def _lecture_minutes(db, course_code: str, lecture_no: int, chunk_id: int | None) -> int:
+    if chunk_id is None:
+        return FALLBACK_MINUTES_PER_LECTURE
+    chunk = db.query(HandoutChunk).get(chunk_id)
+    if not chunk:
+        return FALLBACK_MINUTES_PER_LECTURE
+    text = chunk.enriched_md or chunk.raw_text or ""
+    words = len(text.split())
+    return round(words / WORDS_PER_MINUTE) if words > 0 else FALLBACK_MINUTES_PER_LECTURE
+
+
 def _proportional_range(n: int, m: int, total: int) -> tuple[int, int]:
     """Quiz n of m covers lectures [start, end] (1-based, inclusive)."""
     start = int((n - 1) / m * total) + 1

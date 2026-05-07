@@ -11,6 +11,7 @@ import { PipelinePage } from "./pages/PipelinePage";
 import { StudyGuidePage } from "./pages/StudyGuidePage";
 import { StudyCanvasPage } from "./pages/StudyCanvasPage";
 import { StudyPlanPage } from "./pages/StudyPlanPage";
+import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { Course, Item, Lecture } from "./api/client";
 
 const queryClient = new QueryClient({
@@ -176,6 +177,7 @@ export default function App() {
   const [expanded, setExpanded] = useState(false);
   const [drill, setDrill] = useState<DrillState>({ type: "none" });
   const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [playgroundCourse, setPlaygroundCourse] = useState<string | null>(null);
 
   function handleSelectItem(item: Item, courses: Course[]) {
     const course = courses.find((c) => c.id === item.course_id) ?? null;
@@ -199,6 +201,7 @@ export default function App() {
   function handleNav(p: Page) {
     setPage(p);
     setDrill({ type: "none" });
+    setPlaygroundCourse(null);
   }
 
   function renderContent() {
@@ -284,13 +287,23 @@ export default function App() {
     }
 
     if (page === "plan") {
+      if (playgroundCourse) {
+        return (
+          <PlaygroundPage
+            courseCode={playgroundCourse}
+            onBack={() => setPlaygroundCourse(null)}
+            onOpenCanvas={(code, chunkId) => {
+              sessionStorage.setItem("canvas_select_course", code);
+              if (chunkId) sessionStorage.setItem("canvas_select_chunk", String(chunkId));
+              setPlaygroundCourse(null);
+              setPage("canvas");
+            }}
+          />
+        );
+      }
       return (
         <StudyPlanPage
-          onOpenCanvas={(code) => {
-            setPage("canvas");
-            // StudyCanvasPage auto-selects on mount — pass code via a small trick
-            sessionStorage.setItem("canvas_select_course", code);
-          }}
+          onOpenPlayground={(code) => setPlaygroundCourse(code)}
         />
       );
     }

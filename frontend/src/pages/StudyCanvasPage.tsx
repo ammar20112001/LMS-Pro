@@ -132,13 +132,24 @@ export function StudyCanvasPage() {
     if (!selectedCourse) setSelectedCourse(courses[0].course_code);
   }, [courses]);
 
-  // Auto-select first chunk
+  // Auto-select chunk: honour cross-page hint, else first chunk
   useEffect(() => {
-    if (chunks.length > 0 && !selectedChunkId) {
-      setSelectedChunkId(chunks[0].id);
-    }
     if (selectedCourse) setSelectedChunkId(null);
   }, [selectedCourse]);
+
+  useEffect(() => {
+    if (chunks.length === 0) return;
+    const hint = sessionStorage.getItem("canvas_select_chunk");
+    if (hint) {
+      const id = parseInt(hint, 10);
+      if (chunks.find((c) => c.id === id)) {
+        sessionStorage.removeItem("canvas_select_chunk");
+        setSelectedChunkId(id);
+        return;
+      }
+    }
+    if (!selectedChunkId) setSelectedChunkId(chunks[0].id);
+  }, [chunks]);
 
   function handleCourseSelect(code: string) {
     setSelectedCourse(code);
