@@ -67,6 +67,7 @@ def list_chunks(course_code: str):
                 "title": c.title,
                 "enrich_status": c.enrich_status,
                 "enriched_at": c.enriched_at.isoformat() if c.enriched_at else None,
+                "is_completed": c.is_completed,
                 "image_count": len(c.images),
             }
             for c in chunks

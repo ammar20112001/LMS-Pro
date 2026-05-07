@@ -213,6 +213,7 @@ export interface CanvasChunkSummary {
   title: string;
   enrich_status: string;
   enriched_at: string | null;
+  is_completed: boolean;
   image_count: number;
 }
 
