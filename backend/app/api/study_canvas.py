@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, case
 
 from ..db import SessionLocal
-from ..models import HandoutSource, HandoutChunk, HandoutImage
+from ..models import HandoutSource, HandoutChunk, HandoutImage, HandoutSection
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +82,33 @@ def get_chunk(chunk_id: int):
         chunk = db.query(HandoutChunk).get(chunk_id)
         if not chunk:
             raise HTTPException(status_code=404, detail="Chunk not found")
+
+        # Lazy section parse on first fetch after enrichment
+        sections_db = (
+            db.query(HandoutSection)
+            .filter_by(chunk_id=chunk_id)
+            .order_by(HandoutSection.order)
+            .all()
+        )
+        if not sections_db and chunk.enriched_md:
+            from ..study.sections import parse_chunk_sections
+            parse_chunk_sections(chunk_id)
+            sections_db = (
+                db.query(HandoutSection)
+                .filter_by(chunk_id=chunk_id)
+                .order_by(HandoutSection.order)
+                .all()
+            )
+
+        # Build image map: page_no → list of image URLs
+        images_by_page: dict[int, list[dict]] = {}
+        for img in chunk.images:
+            images_by_page.setdefault(img.page_no, []).append({
+                "seq": img.seq,
+                "page_no": img.page_no,
+                "url": f"/api/study-canvas/chunks/{chunk_id}/images/{img.seq}",
+            })
+
         return {
             "id": chunk.id,
             "course_code": chunk.course_code,
@@ -90,15 +117,76 @@ def get_chunk(chunk_id: int):
             "enrich_status": chunk.enrich_status,
             "enriched_md": chunk.enriched_md,
             "enriched_at": chunk.enriched_at.isoformat() if chunk.enriched_at else None,
+            "is_completed": chunk.is_completed,
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
             "images": [
-                {"seq": img.seq, "url": f"/api/study-canvas/chunks/{chunk_id}/images/{img.seq}"}
+                {"seq": img.seq, "page_no": img.page_no, "url": f"/api/study-canvas/chunks/{chunk_id}/images/{img.seq}"}
                 for img in chunk.images
+            ],
+            "images_by_page": images_by_page,
+            "sections": [
+                {
+                    "id": s.id,
+                    "section_key": s.section_key,
+                    "level": s.level,
+                    "title": s.title,
+                    "body": s.body or "",
+                    "order": s.order,
+                    "is_completed": s.is_completed,
+                }
+                for s in sections_db
             ],
         }
     finally:
         db.close()
+
+
+class CompletionRequest(BaseModel):
+    is_completed: bool
+
+
+@router.post("/chunks/{chunk_id}/complete")
+def set_chunk_completion(chunk_id: int, body: CompletionRequest):
+    db = SessionLocal()
+    try:
+        chunk = db.query(HandoutChunk).get(chunk_id)
+        if not chunk:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        chunk.is_completed = body.is_completed
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/sections/{section_id}/complete")
+def set_section_completion(section_id: int, body: CompletionRequest):
+    db = SessionLocal()
+    try:
+        section = db.query(HandoutSection).get(section_id)
+        if not section:
+            raise HTTPException(status_code=404, detail="Section not found")
+        section.is_completed = body.is_completed
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/chunks/{chunk_id}/parse-sections")
+def reparse_sections(chunk_id: int):
+    """Force re-parse sections from enriched_md (useful after Sonnet edits)."""
+    from ..study.sections import parse_chunk_sections
+    db = SessionLocal()
+    try:
+        chunk = db.query(HandoutChunk).get(chunk_id)
+        if not chunk:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+    finally:
+        db.close()
+    sections = parse_chunk_sections(chunk_id)
+    return {"count": len(sections)}
 
 
 @router.get("/chunks/{chunk_id}/images/{seq}")

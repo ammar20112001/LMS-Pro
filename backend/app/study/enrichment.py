@@ -115,6 +115,12 @@ def _enrich_chunk(db, chunk: HandoutChunk):
         chunk.enriched_at = utcnow()
         db.commit()
         log.info("Enriched chunk %d (%s)", chunk.id, chunk.title[:50])
+        # Parse sections immediately after enrichment
+        try:
+            from .sections import parse_chunk_sections
+            parse_chunk_sections(chunk.id)
+        except Exception:
+            log.exception("Section parsing failed for chunk %d", chunk.id)
     except Exception as e:
         log.exception("Failed to enrich chunk %d: %s", chunk.id, e)
         chunk.enrich_status = "failed"
@@ -144,6 +150,11 @@ def enrich_with_sonnet(chunk_id: int, instructions: str) -> str:
         chunk.enriched_at = utcnow()
         db.commit()
         log.info("Sonnet enrichment done for chunk %d", chunk_id)
+        try:
+            from .sections import parse_chunk_sections
+            parse_chunk_sections(chunk_id)
+        except Exception:
+            log.exception("Section parsing failed for chunk %d after Sonnet", chunk_id)
         return result
     finally:
         db.close()

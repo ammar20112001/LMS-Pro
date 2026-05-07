@@ -409,7 +409,7 @@ def _extract_pdf_images(db, doc, page_start: int, page_end: int, chunk_id: int, 
                 ext = img_bytes["ext"]
                 out_path = out_dir / f"{chunk_id}_{seq}.{ext}"
                 out_path.write_bytes(img_bytes["image"])
-                db.add(HandoutImage(chunk_id=chunk_id, seq=seq, file_path=str(out_path)))
+                db.add(HandoutImage(chunk_id=chunk_id, seq=seq, page_no=page_idx, file_path=str(out_path)))
                 seq += 1
             except Exception as e:
                 log.debug("Image extraction error xref=%d: %s", xref, e)

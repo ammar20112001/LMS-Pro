@@ -156,6 +156,7 @@ class HandoutChunk(Base):
     enriched_md = Column(Text, nullable=True)
     enriched_at = Column(DateTime(timezone=True), nullable=True)
     enrich_status = Column(String(20), default="pending")  # pending | enriching | done | failed
+    is_completed = Column(Boolean, default=False)
 
     source = relationship("HandoutSource", back_populates="chunks")
     images = relationship("HandoutImage", back_populates="chunk", order_by="HandoutImage.seq", cascade="all, delete-orphan")
@@ -167,9 +168,27 @@ class HandoutImage(Base):
     id = Column(Integer, primary_key=True)
     chunk_id = Column(Integer, ForeignKey("handout_chunks.id"), nullable=False)
     seq = Column(Integer, default=1)
+    page_no = Column(Integer, default=0)  # PDF page index (0-based) within the chunk
     file_path = Column(String(1000), nullable=False)
 
     chunk = relationship("HandoutChunk", back_populates="images")
+
+
+class HandoutSection(Base):
+    """One heading-delimited section within an enriched chunk."""
+    __tablename__ = "handout_sections"
+
+    id = Column(Integer, primary_key=True)
+    chunk_id = Column(Integer, ForeignKey("handout_chunks.id"), nullable=False)
+    section_key = Column(String(200), nullable=False)  # stable slug: "{chunk_id}-{order}"
+    level = Column(Integer, default=1)     # 1 = ## heading, 2 = ### heading
+    title = Column(String(500), nullable=False)
+    body = Column(Text, nullable=True)
+    order = Column(Integer, default=0)     # position within chunk
+    is_completed = Column(Boolean, default=False)
+    parsed_at = Column(DateTime(timezone=True), nullable=True)
+
+    chunk = relationship("HandoutChunk")
 
 
 class SyncRun(Base):

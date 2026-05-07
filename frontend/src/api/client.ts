@@ -218,7 +218,18 @@ export interface CanvasChunkSummary {
 
 export interface CanvasImage {
   seq: number;
+  page_no: number;
   url: string;
+}
+
+export interface CanvasSection {
+  id: number;
+  section_key: string;
+  level: number;   // 0 = intro/overview, 1 = ##, 2 = ###
+  title: string;
+  body: string;
+  order: number;
+  is_completed: boolean;
 }
 
 export interface CanvasChunk {
@@ -229,9 +240,12 @@ export interface CanvasChunk {
   enrich_status: string;
   enriched_md: string | null;
   enriched_at: string | null;
+  is_completed: boolean;
   page_start: number;
   page_end: number;
   images: CanvasImage[];
+  images_by_page: Record<string, CanvasImage[]>;  // page_no (string key) → images
+  sections: CanvasSection[];
 }
 
 export const fetchCanvasCourses = (): Promise<CanvasCourse[]> =>
@@ -245,6 +259,12 @@ export const fetchCanvasChunk = (chunkId: number): Promise<CanvasChunk> =>
 
 export const enrichWithSonnet = (chunkId: number, instructions: string): Promise<{ status: string }> =>
   api.post(`/api/study-canvas/chunks/${chunkId}/enrich`, { instructions }).then((r) => r.data);
+
+export const setChunkCompletion = (chunkId: number, is_completed: boolean): Promise<{ ok: boolean }> =>
+  api.post(`/api/study-canvas/chunks/${chunkId}/complete`, { is_completed }).then((r) => r.data);
+
+export const setSectionCompletion = (sectionId: number, is_completed: boolean): Promise<{ ok: boolean }> =>
+  api.post(`/api/study-canvas/sections/${sectionId}/complete`, { is_completed }).then((r) => r.data);
 
 export const triggerHandoutIngest = (): Promise<{ status: string }> =>
   api.post("/api/study-canvas/ingest").then((r) => r.data);
