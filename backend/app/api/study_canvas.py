@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from ..db import SessionLocal
 from ..models import HandoutSource, HandoutChunk, HandoutImage
@@ -31,7 +31,7 @@ def list_courses():
                 HandoutChunk.course_code,
                 func.count(HandoutChunk.id).label("total_chunks"),
                 func.sum(
-                    (HandoutChunk.enrich_status == "done").cast(int)
+                    case((HandoutChunk.enrich_status == "done", 1), else_=0)
                 ).label("enriched_chunks"),
             )
             .group_by(HandoutChunk.course_code)
@@ -157,6 +157,45 @@ def trigger_ingest(background_tasks: BackgroundTasks):
     from ..jobs.handout_job import run_ingestion_job
     background_tasks.add_task(run_ingestion_job)
     return {"status": "started"}
+
+
+@router.get("/sources")
+def list_sources():
+    db = SessionLocal()
+    try:
+        sources = db.query(HandoutSource).order_by(HandoutSource.course_code).all()
+        return [
+            {
+                "id": s.id,
+                "course_code": s.course_code,
+                "file_path": s.file_path,
+                "file_type": s.file_type,
+                "total_chunks": s.total_chunks,
+                "ingest_status": s.ingest_status,
+                "ingested_at": s.ingested_at.isoformat() if s.ingested_at else None,
+            }
+            for s in sources
+        ]
+    finally:
+        db.close()
+
+
+@router.post("/sources/{source_id}/reingest")
+def reingest_source(source_id: int, background_tasks: BackgroundTasks):
+    """Reset a source to pending and trigger re-ingestion (uses Haiku fallback if needed)."""
+    db = SessionLocal()
+    try:
+        source = db.query(HandoutSource).get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+        file_path = source.file_path
+    finally:
+        db.close()
+
+    from ..study.ingestion import reset_source_for_reingest, run_ingestion
+    reset_source_for_reingest(file_path)
+    background_tasks.add_task(run_ingestion)
+    return {"status": "started", "file": Path(file_path).name}
 
 
 def _media_type(path: Path) -> str:
