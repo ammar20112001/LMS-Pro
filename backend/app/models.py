@@ -189,6 +189,35 @@ class HandoutSection(Base):
     parsed_at = Column(DateTime(timezone=True), nullable=True)
 
     chunk = relationship("HandoutChunk")
+    notes = relationship("SectionNote", back_populates="section", cascade="all, delete-orphan", order_by="SectionNote.created_at")
+
+
+class SectionNote(Base):
+    """User note attached to a specific section."""
+    __tablename__ = "section_notes"
+
+    id = Column(Integer, primary_key=True)
+    section_id = Column(Integer, ForeignKey("handout_sections.id"), nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    section = relationship("HandoutSection", back_populates="notes")
+
+
+class FocusSession(Base):
+    """Persisted focus mode state — resumed on next visit."""
+    __tablename__ = "focus_sessions"
+
+    id = Column(Integer, primary_key=True)
+    course_code = Column(String(20), nullable=False)
+    chunk_ids = Column(Text, nullable=False)        # JSON list of chunk IDs
+    label = Column(String(200), nullable=True)      # optional user label
+    budget_minutes = Column(Integer, default=60)
+    elapsed_seconds = Column(Integer, default=0)
+    last_chunk_id = Column(Integer, nullable=True)  # scroll position hint
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class SyncRun(Base):

@@ -228,6 +228,19 @@ export function PlaygroundPage({
     onOpenCanvas(courseCode, chunkId);
   }
 
+  function handleFocusBehind() {
+    if (!data) return;
+    const ids = [...data.playground.behind, ...data.playground.soon]
+      .filter((l) => l.chunk_id !== null)
+      .map((l) => l.chunk_id!)
+      // deduplicate
+      .filter((id, i, arr) => arr.indexOf(id) === i);
+    if (ids.length === 0) return;
+    sessionStorage.setItem("canvas_select_course", courseCode);
+    sessionStorage.setItem("canvas_focus_chunks", JSON.stringify(ids));
+    onOpenCanvas(courseCode);
+  }
+
   const hasBehind = data.backlog_lectures > 0;
 
   return (
@@ -271,6 +284,19 @@ export function PlaygroundPage({
           <div style={{ height: "100%", width: `${progress}%`, background: "var(--accent)", borderRadius: 99, transition: "width 0.4s" }} />
         </div>
       </div>
+
+      {/* Quick actions */}
+      {(behind.length > 0 || soon.length > 0) && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <button
+            className="btn"
+            style={{ fontSize: 12, padding: "5px 14px" }}
+            onClick={handleFocusBehind}
+          >
+            Focus: Behind + This Week →
+          </button>
+        </div>
+      )}
 
       {/* Sections */}
       {behind.length === 0 && soon.length === 0 && later.length === 0 ? (

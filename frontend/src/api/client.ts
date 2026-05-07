@@ -270,6 +270,73 @@ export const setSectionCompletion = (sectionId: number, is_completed: boolean): 
 export const triggerHandoutIngest = (): Promise<{ status: string }> =>
   api.post("/api/study-canvas/ingest").then((r) => r.data);
 
+// ── Focus Mode ────────────────────────────────────────────────────────────────
+
+export interface SectionNote {
+  id: number;
+  section_id: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FocusSection extends CanvasSection {
+  notes: SectionNote[];
+}
+
+export interface FocusChunk {
+  id: number;
+  course_code: string;
+  lecture_no: number;
+  title: string;
+  enrich_status: string;
+  is_completed: boolean;
+  page_start: number;
+  page_end: number;
+  images: CanvasImage[];
+  sections: FocusSection[];
+}
+
+export interface FocusSession {
+  id: number;
+  course_code: string;
+  chunk_ids: number[];
+  label: string | null;
+  budget_minutes: number;
+  elapsed_seconds: number;
+  last_chunk_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const fetchFocusChunks = (chunkIds: number[]): Promise<FocusChunk[]> =>
+  api.post("/api/focus/chunks/bulk", { chunk_ids: chunkIds }).then((r) => r.data);
+
+export const addNote = (sectionId: number, body: string): Promise<SectionNote> =>
+  api.post(`/api/focus/sections/${sectionId}/notes`, { body }).then((r) => r.data);
+
+export const updateNote = (noteId: number, body: string): Promise<SectionNote> =>
+  api.put(`/api/focus/notes/${noteId}`, { body }).then((r) => r.data);
+
+export const deleteNote = (noteId: number): Promise<{ ok: boolean }> =>
+  api.delete(`/api/focus/notes/${noteId}`).then((r) => r.data);
+
+export const listFocusSessions = (courseCode?: string): Promise<FocusSession[]> =>
+  api.get("/api/focus/sessions", { params: courseCode ? { course_code: courseCode } : {} }).then((r) => r.data);
+
+export const createFocusSession = (data: {
+  course_code: string; chunk_ids: number[]; label?: string; budget_minutes?: number;
+}): Promise<FocusSession> =>
+  api.post("/api/focus/sessions", data).then((r) => r.data);
+
+export const updateFocusSession = (sessionId: number, data: {
+  elapsed_seconds?: number; last_chunk_id?: number; budget_minutes?: number; label?: string;
+}): Promise<FocusSession> =>
+  api.patch(`/api/focus/sessions/${sessionId}`, data).then((r) => r.data);
+
+export const deleteFocusSession = (sessionId: number): Promise<{ ok: boolean }> =>
+  api.delete(`/api/focus/sessions/${sessionId}`).then((r) => r.data);
+
 // ── Study Plan ─────────────────────────────────────────────────────────────────
 
 export interface PlanDeadline {

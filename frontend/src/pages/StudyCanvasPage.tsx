@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FocusMode } from "./FocusMode";
 import {
   fetchCanvasCourses,
   fetchCanvasChunks,
@@ -7,12 +8,14 @@ import {
   enrichWithSonnet,
   setChunkCompletion,
   setSectionCompletion,
+  listFocusSessions,
   triggerHandoutIngest,
   CanvasCourse,
   CanvasChunkSummary,
   CanvasChunk,
   CanvasImage,
   CanvasSection,
+  FocusSession,
 } from "../api/client";
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -350,6 +353,10 @@ export function StudyCanvasPage() {
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
   const [selectedChunkId, setSelectedChunkId] = useState<number | null>(null);
   const [showEnrichPanel, setShowEnrichPanel] = useState(false);
+  const [multiSelect, setMultiSelect] = useState<Set<number>>(new Set());
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusChunkIds, setFocusChunkIds] = useState<number[]>([]);
+  const [resumeSession, setResumeSession] = useState<FocusSession | null>(null);
 
   const { data: courses = [], isLoading: coursesLoading } = useQuery({
     queryKey: ["canvas-courses"],
@@ -439,11 +446,26 @@ export function StudyCanvasPage() {
   }, [courses]);
 
   useEffect(() => {
-    if (selectedCourse) setSelectedChunkId(null);
+    if (selectedCourse) { setSelectedChunkId(null); setMultiSelect(new Set()); }
   }, [selectedCourse]);
 
   useEffect(() => {
     if (chunks.length === 0) return;
+
+    // Focus mode hint from Study Plan / Playground
+    const focusHint = sessionStorage.getItem("canvas_focus_chunks");
+    if (focusHint) {
+      sessionStorage.removeItem("canvas_focus_chunks");
+      const ids: number[] = JSON.parse(focusHint);
+      const valid = ids.filter((id) => chunks.find((c) => c.id === id));
+      if (valid.length > 0) {
+        setFocusChunkIds(valid);
+        setResumeSession(null);
+        setFocusMode(true);
+        return;
+      }
+    }
+
     const hint = sessionStorage.getItem("canvas_select_chunk");
     if (hint) {
       const id = parseInt(hint, 10);
@@ -465,6 +487,18 @@ export function StudyCanvasPage() {
     return course.total_chunks > 0
       ? Math.round((course.enriched_chunks / course.total_chunks) * 100)
       : 0;
+  }
+
+  // Focus Mode overlay
+  if (focusMode && focusChunkIds.length > 0 && selectedCourse) {
+    return (
+      <FocusMode
+        courseCode={selectedCourse}
+        initialChunkIds={focusChunkIds}
+        existingSession={resumeSession}
+        onExit={() => { setFocusMode(false); setMultiSelect(new Set()); }}
+      />
+    );
   }
 
   return (
@@ -536,12 +570,29 @@ export function StudyCanvasPage() {
         {/* Panel 2: Lecture list */}
         <div style={{
           width: 260, minWidth: 260, borderRight: "1px solid var(--border)",
-          overflowY: "auto", padding: "0.75rem 0",
+          overflowY: "auto", padding: "0.75rem 0", display: "flex", flexDirection: "column",
         }}>
+          {/* Enrichment progress + Focus button */}
           {courseProgress && (
-            <div style={{ padding: "0.5rem 1rem 0.75rem", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 5 }}>
-                {courseProgress.enriched_chunks} / {courseProgress.total_chunks} enriched
+            <div style={{ padding: "0.5rem 1rem 0.75rem", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                  {courseProgress.enriched_chunks} / {courseProgress.total_chunks} enriched
+                </span>
+                {multiSelect.size > 0 && (
+                  <button
+                    className="btn"
+                    style={{ fontSize: 11, padding: "3px 10px" }}
+                    onClick={() => {
+                      const ids = Array.from(multiSelect);
+                      setFocusChunkIds(ids);
+                      setResumeSession(null);
+                      setFocusMode(true);
+                    }}
+                  >
+                    Focus {multiSelect.size} →
+                  </button>
+                )}
               </div>
               <div style={{ height: 3, background: "var(--bg3)", borderRadius: 99, overflow: "hidden" }}>
                 <div style={{
@@ -552,44 +603,75 @@ export function StudyCanvasPage() {
               </div>
             </div>
           )}
-          {chunks.map((c) => {
-            const active = selectedChunkId === c.id;
-            return (
-              <div
-                key={c.id}
-                style={{
-                  display: "flex", alignItems: "stretch",
-                  borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: active ? "var(--bg3)" : "transparent",
-                }}
-              >
-                {/* Tick on the left */}
-                <div style={{ display: "flex", alignItems: "center", paddingLeft: 10 }}>
-                  <Tick
-                    done={c.is_completed}
-                    onToggle={() => chunkCompleteMutation.mutate({ id: c.id, done: !c.is_completed })}
-                    size={14}
-                  />
-                </div>
-                {/* Clickable text area */}
-                <button
-                  onClick={() => { setSelectedChunkId(c.id); setShowEnrichPanel(false); }}
+
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {chunks.map((c) => {
+              const active = selectedChunkId === c.id;
+              const selected = multiSelect.has(c.id);
+              return (
+                <div
+                  key={c.id}
                   style={{
-                    flex: 1, textAlign: "left", padding: "0.65rem 0.75rem 0.65rem 8px",
-                    background: "none", border: "none", cursor: "pointer",
-                    fontSize: 13,
-                    textDecoration: c.is_completed ? "line-through" : "none",
-                    color: c.is_completed ? "var(--text3)" : "var(--text)",
-                  } as React.CSSProperties}
+                    display: "flex", alignItems: "stretch",
+                    borderLeft: active ? "2px solid var(--accent)" : selected ? "2px solid var(--amber)" : "2px solid transparent",
+                    background: active ? "var(--bg3)" : selected ? "rgba(245,158,11,0.06)" : "transparent",
+                  }}
                 >
-                  <div style={{ fontWeight: active ? 600 : 400, marginBottom: 3 }}>
-                    {c.title}
+                  {/* Multi-select checkbox */}
+                  <div
+                    style={{ display: "flex", alignItems: "center", padding: "0 4px 0 8px", cursor: "pointer" }}
+                    onClick={() => {
+                      setMultiSelect((prev) => {
+                        const next = new Set(prev);
+                        next.has(c.id) ? next.delete(c.id) : next.add(c.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <div style={{
+                      width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                      border: `2px solid ${selected ? "var(--amber)" : "var(--border2)"}`,
+                      background: selected ? "var(--amber)" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      transition: "all 0.12s",
+                    }}>
+                      {selected && (
+                        <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                          <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                  <StatusBadge status={c.enrich_status} />
-                </button>
-              </div>
-            );
-          })}
+
+                  {/* Completion tick */}
+                  <div style={{ display: "flex", alignItems: "center", paddingRight: 4 }}>
+                    <Tick
+                      done={c.is_completed}
+                      onToggle={() => chunkCompleteMutation.mutate({ id: c.id, done: !c.is_completed })}
+                      size={13}
+                    />
+                  </div>
+
+                  {/* Clickable text */}
+                  <button
+                    onClick={() => { setSelectedChunkId(c.id); setShowEnrichPanel(false); }}
+                    style={{
+                      flex: 1, textAlign: "left", padding: "0.6rem 0.75rem 0.6rem 4px",
+                      background: "none", border: "none", cursor: "pointer",
+                      fontSize: 13,
+                      textDecoration: c.is_completed ? "line-through" : "none",
+                      color: c.is_completed ? "var(--text3)" : "var(--text)",
+                    } as React.CSSProperties}
+                  >
+                    <div style={{ fontWeight: active ? 600 : 400, marginBottom: 3 }}>
+                      {c.title}
+                    </div>
+                    <StatusBadge status={c.enrich_status} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Panel 3: Reading pane */}

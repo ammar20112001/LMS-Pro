@@ -8,6 +8,7 @@ from .api import courses, items, sync, assignments
 from .api.courses import notes_router, study_router
 from .api.study_canvas import router as study_canvas_router
 from .api.study_plan import router as study_plan_router
+from .api.focus import router as focus_router
 from .jobs import scheduler
 
 logging.basicConfig(
@@ -44,6 +45,7 @@ app.include_router(study_router)
 app.include_router(assignments.router)
 app.include_router(study_canvas_router)
 app.include_router(study_plan_router)
+app.include_router(focus_router)
 
 
 @app.get("/api/health")
