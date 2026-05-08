@@ -10,6 +10,7 @@ from .notes_job import run_notes_job
 from .deadline_calendar_job import run_deadline_calendar_job
 from .youtube_job import run_youtube_job
 from .handout_job import run_ingestion_job, run_enrichment_job
+from . import job_toggles as toggles
 
 log = logging.getLogger(__name__)
 
@@ -37,92 +38,82 @@ def start():
     global _scheduler
     _scheduler = BackgroundScheduler(timezone="Asia/Karachi")
 
-    _scheduler.add_job(
-        _run_sync_wrapper,
-        trigger=IntervalTrigger(minutes=settings.sync_interval_minutes),
-        id="lms_sync",
-        name="LMS Sync",
-        replace_existing=True,
-        misfire_grace_time=None,
-        coalesce=True,
-    )
+    # Each job is gated by a flag in `job_toggles.py` — edit that file
+    # to enable/disable pipelines without touching this scheduler.
+    enabled: list[str] = []
 
-    _scheduler.add_job(
-        run_notify,
-        trigger=IntervalTrigger(minutes=5),
-        id="notify_dispatch",
-        name="Notification Dispatcher",
-        replace_existing=True,
-    )
+    if toggles.LMS_SYNC:
+        _scheduler.add_job(
+            _run_sync_wrapper,
+            trigger=IntervalTrigger(minutes=settings.sync_interval_minutes),
+            id="lms_sync", name="LMS Sync", replace_existing=True,
+            misfire_grace_time=None, coalesce=True,
+        )
+        enabled.append("lms_sync")
 
-    _scheduler.add_job(
-        run_digest,
-        trigger=CronTrigger(hour=settings.digest_hour_local, minute=0),
-        id="daily_digest",
-        name="Daily Digest",
-        replace_existing=True,
-    )
+    if toggles.NOTIFY_DISPATCH:
+        _scheduler.add_job(
+            run_notify, trigger=IntervalTrigger(minutes=5),
+            id="notify_dispatch", name="Notification Dispatcher", replace_existing=True,
+        )
+        enabled.append("notify_dispatch")
 
-    _scheduler.add_job(
-        _run_notes_wrapper,
-        trigger=IntervalTrigger(minutes=settings.notes_interval_minutes),
-        id="notes_gen",
-        name="Notes Generator",
-        replace_existing=True,
-        coalesce=True,
-    )
+    if toggles.DAILY_DIGEST:
+        _scheduler.add_job(
+            run_digest, trigger=CronTrigger(hour=settings.digest_hour_local, minute=0),
+            id="daily_digest", name="Daily Digest", replace_existing=True,
+        )
+        enabled.append("daily_digest")
 
-    _scheduler.add_job(
-        run_deadline_calendar_job,
-        trigger=IntervalTrigger(hours=1),
-        id="deadline_reminder",
-        name="Deadline Reminder Scheduler",
-        replace_existing=True,
-        coalesce=True,
-    )
+    if toggles.NOTES_GENERATION:
+        _scheduler.add_job(
+            _run_notes_wrapper,
+            trigger=IntervalTrigger(minutes=settings.notes_interval_minutes),
+            id="notes_gen", name="Notes Generator", replace_existing=True, coalesce=True,
+        )
+        enabled.append("notes_gen")
 
-    _scheduler.add_job(
-        run_youtube_job,
-        trigger=IntervalTrigger(minutes=2),
-        id="youtube_extraction",
-        name="YouTube Video Extraction",
-        replace_existing=True,
-    )
+    if toggles.DEADLINE_REMINDER:
+        _scheduler.add_job(
+            run_deadline_calendar_job, trigger=IntervalTrigger(hours=1),
+            id="deadline_reminder", name="Deadline Reminder Scheduler",
+            replace_existing=True, coalesce=True,
+        )
+        enabled.append("deadline_reminder")
 
-    _scheduler.add_job(
-        run_ingestion_job,
-        trigger=IntervalTrigger(hours=1),
-        id="handout_ingestion",
-        name="Handout Ingestion",
-        replace_existing=True,
-        coalesce=True,
-    )
+    if toggles.YOUTUBE_EXTRACTION:
+        _scheduler.add_job(
+            run_youtube_job, trigger=IntervalTrigger(minutes=2),
+            id="youtube_extraction", name="YouTube Video Extraction", replace_existing=True,
+        )
+        enabled.append("youtube_extraction")
 
-    _scheduler.add_job(
-        run_enrichment_job,
-        trigger=IntervalTrigger(minutes=2),
-        id="handout_enrichment",
-        name="Handout Enrichment",
-        replace_existing=True,
-        coalesce=True,
-    )
+    if toggles.HANDOUT_INGESTION:
+        _scheduler.add_job(
+            run_ingestion_job, trigger=IntervalTrigger(hours=1),
+            id="handout_ingestion", name="Handout Ingestion",
+            replace_existing=True, coalesce=True,
+        )
+        enabled.append("handout_ingestion")
 
-    # Run ingestion once on startup
-    _scheduler.add_job(
-        run_ingestion_job,
-        trigger="date",
-        id="handout_ingestion_startup",
-        name="Handout Ingestion (startup)",
-        replace_existing=True,
-    )
+    if toggles.HANDOUT_ENRICHMENT:
+        _scheduler.add_job(
+            run_enrichment_job, trigger=IntervalTrigger(minutes=2),
+            id="handout_enrichment", name="Handout Enrichment",
+            replace_existing=True, coalesce=True,
+        )
+        enabled.append("handout_enrichment")
+
+    if toggles.HANDOUT_INGESTION_STARTUP:
+        _scheduler.add_job(
+            run_ingestion_job, trigger="date",
+            id="handout_ingestion_startup", name="Handout Ingestion (startup)",
+            replace_existing=True,
+        )
+        enabled.append("handout_ingestion_startup")
 
     _scheduler.start()
-    log.info(
-        "Scheduler started — sync every %d min, youtube every 2 min, notify every 5 min, digest at %d:00, notes every %d min",
-        settings.sync_interval_minutes,
-        settings.digest_hour_local,
-        settings.notes_interval_minutes,
-    )
+    log.info("Scheduler started — enabled jobs: %s", ", ".join(enabled) or "(none)")
 
 
 def stop():
