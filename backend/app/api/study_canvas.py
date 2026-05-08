@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, case
 
-from ..db import SessionLocal
+from ..db import SessionLocal, engine
 from ..models import HandoutSource, HandoutChunk, HandoutImage, HandoutSection
 
 log = logging.getLogger(__name__)
@@ -285,6 +285,51 @@ def reingest_source(source_id: int, background_tasks: BackgroundTasks):
     reset_source_for_reingest(file_path)
     background_tasks.add_task(run_ingestion)
     return {"status": "started", "file": Path(file_path).name}
+
+
+@router.get("/search")
+def search_sections(q: str, course_code: str | None = None, limit: int = 15):
+    """Full-text search over section titles and bodies using SQLite FTS5 (BM25 ranking)."""
+    q = q.strip()
+    if len(q) < 2:
+        return []
+
+    # Build prefix-match FTS5 query: "hash table" → "hash* table*"
+    import re
+    safe = re.sub(r"[^\w\s]", " ", q)
+    fts_query = " ".join(w + "*" for w in safe.split() if w)
+
+    from sqlalchemy import text
+
+    where_extra = "AND c.course_code = :course_code" if course_code else ""
+    sql = text(f"""
+        SELECT
+            s.id,
+            s.title,
+            s.level,
+            s.order AS "order",
+            s.section_key,
+            COALESCE(SUBSTR(s.body, 1, 220), '') AS body_snippet,
+            c.id   AS chunk_id,
+            c.title AS chunk_title,
+            c.lecture_no,
+            c.course_code
+        FROM sections_fts
+        JOIN handout_sections s ON sections_fts.rowid = s.id
+        JOIN handout_chunks   c ON s.chunk_id = c.id
+        WHERE sections_fts MATCH :q
+        {where_extra}
+        ORDER BY rank
+        LIMIT :limit
+    """)
+    params: dict = {"q": fts_query, "limit": limit}
+    if course_code:
+        params["course_code"] = course_code
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    return [dict(r._mapping) for r in rows]
 
 
 def _media_type(path: Path) -> str:

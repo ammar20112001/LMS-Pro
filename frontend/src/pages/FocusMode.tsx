@@ -7,6 +7,15 @@ import {
   addNote,
   updateNote,
   deleteNote,
+  generateResources,
+  deleteResource,
+  uploadScreenshot,
+  deleteScreenshot,
+  updateScreenshotCaption,
+  getChatMessages,
+  sendChatMessage,
+  deleteChatMessage,
+  listFocusSessions,
   createFocusSession,
   updateFocusSession,
   FocusChunk,
@@ -14,6 +23,9 @@ import {
   SectionNote,
   FocusSession,
   CanvasImage,
+  ExternalResource,
+  SectionScreenshot,
+  ChatMessage,
 } from "../api/client";
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -98,6 +110,296 @@ function Tick({ done, onToggle, size = 16 }: { done: boolean; onToggle: () => vo
   );
 }
 
+// ── Reading time ───────────────────────────────────────────────────────────────
+
+function estimateMins(body: string): number {
+  const words = body.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 200));
+}
+
+// ── Chat panel ─────────────────────────────────────────────────────────────────
+
+function ChatPanel({
+  sessionId,
+  focusedSection,
+}: {
+  sessionId: number | null;
+  focusedSection: FocusSection | null;
+}) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: messages = [] } = useQuery<ChatMessage[]>({
+    queryKey: ["chat-messages", sessionId],
+    queryFn: () => (sessionId ? getChatMessages(sessionId) : Promise.resolve([])),
+    enabled: !!sessionId,
+    refetchInterval: false,
+  });
+
+  const deleteMsg = useMutation({
+    mutationFn: (id: number) => deleteChatMessage(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chat-messages", sessionId] }),
+  });
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  async function handleSend() {
+    if (!draft.trim() || !sessionId || sending) return;
+    const text = draft.trim();
+    setDraft("");
+    setSending(true);
+    try {
+      await sendChatMessage(sessionId, text, focusedSection?.id);
+      qc.invalidateQueries({ queryKey: ["chat-messages", sessionId] });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!sessionId) {
+    return (
+      <div style={{ padding: "1rem", color: "var(--text3)", fontSize: 13 }}>
+        Session not yet saved — keep studying and chat will enable shortly.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Section context badge */}
+      {focusedSection && (
+        <div style={{
+          padding: "5px 10px", fontSize: 10, color: "var(--accent)",
+          background: "rgba(99,102,241,0.07)", borderBottom: "1px solid var(--border)",
+          lineHeight: 1.4,
+        }}>
+          Context: {focusedSection.title}
+        </div>
+      )}
+
+      {/* Message list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem 0.75rem 0" }}>
+        {messages.length === 0 && (
+          <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "center", marginTop: 20 }}>
+            Ask anything about the material.
+          </div>
+        )}
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            style={{
+              marginBottom: 10,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+            }}
+          >
+            <div style={{
+              maxWidth: "88%", padding: "7px 10px", fontSize: 12, lineHeight: 1.55,
+              borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+              background: msg.role === "user" ? "var(--accent)" : "var(--bg2)",
+              color: msg.role === "user" ? "white" : "var(--text)",
+              border: msg.role === "assistant" ? "1px solid var(--border)" : "none",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}>
+              {msg.content}
+            </div>
+            <button
+              onClick={() => deleteMsg.mutate(msg.id)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 9, color: "var(--text3)", padding: "2px 4px", marginTop: 1,
+              }}
+            >✕</button>
+          </div>
+        ))}
+        {sending && (
+          <div style={{ fontSize: 12, color: "var(--text3)", padding: "4px 8px" }}>…</div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: "0.5rem 0.75rem", borderTop: "1px solid var(--border)" }}>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Ask about the material…"
+          rows={2}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+          }}
+          style={{
+            width: "100%", background: "var(--bg3)", border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)", color: "var(--text)", padding: "6px 8px",
+            fontSize: 12, fontFamily: "var(--font)", resize: "none",
+            boxSizing: "border-box",
+          }}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+          <button
+            className="btn"
+            style={{ fontSize: 11, padding: "4px 12px" }}
+            onClick={handleSend}
+            disabled={!draft.trim() || sending}
+          >
+            {sending ? "…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── External Resource card ─────────────────────────────────────────────────────
+
+function ResourceCard({ resource, onDelete }: { resource: ExternalResource; onDelete: () => void }) {
+  return (
+    <div style={{
+      marginBottom: 10, padding: "10px 12px",
+      background: "var(--bg2)", border: "1px solid var(--border)",
+      borderRadius: "var(--radius-sm)",
+    }}>
+      <div style={{ fontSize: 10, color: "var(--text3)", marginBottom: 8, fontStyle: "italic" }}>
+        "{resource.selected_text.length > 70 ? resource.selected_text.slice(0, 70) + "…" : resource.selected_text}"
+      </div>
+      {resource.resources.map((r, i) => (
+        <div key={i} style={{ marginBottom: 8 }}>
+          <a
+            href={r.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none", fontWeight: 500, display: "block", lineHeight: 1.3 }}
+          >
+            {r.title}
+          </a>
+          <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2, lineHeight: 1.4 }}>{r.snippet}</div>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+        <button
+          onClick={onDelete}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "var(--text3)", padding: "1px 4px" }}
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Screenshot card ────────────────────────────────────────────────────────────
+
+function ScreenshotCard({
+  screenshot,
+  onDelete,
+  onUpdateCaption,
+}: {
+  screenshot: SectionScreenshot;
+  onDelete: () => void;
+  onUpdateCaption: (caption: string) => void;
+}) {
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(screenshot.caption ?? "");
+
+  useEffect(() => { setCaptionDraft(screenshot.caption ?? ""); }, [screenshot.caption]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", maxWidth: 180 }}>
+      <div style={{ position: "relative" }}>
+        <img
+          src={`http://localhost:8000${screenshot.url}`}
+          alt={screenshot.caption ?? `Screenshot ${screenshot.seq}`}
+          style={{
+            width: "100%", maxHeight: 140, objectFit: "contain",
+            border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+            background: "var(--bg2)", cursor: "zoom-in", display: "block",
+          }}
+          onClick={() => window.open(`http://localhost:8000${screenshot.url}`, "_blank")}
+        />
+        <button
+          onClick={onDelete}
+          style={{
+            position: "absolute", top: 4, right: 4,
+            background: "rgba(0,0,0,0.55)", border: "none", borderRadius: "50%",
+            color: "white", width: 18, height: 18, cursor: "pointer", fontSize: 10,
+            display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+          }}
+        >✕</button>
+      </div>
+
+      {editingCaption ? (
+        <div style={{ display: "flex", gap: 3, marginTop: 4 }}>
+          <input
+            value={captionDraft}
+            onChange={(e) => setCaptionDraft(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { onUpdateCaption(captionDraft); setEditingCaption(false); }
+              if (e.key === "Escape") { setCaptionDraft(screenshot.caption ?? ""); setEditingCaption(false); }
+            }}
+            style={{
+              flex: 1, fontSize: 10, background: "var(--bg3)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)", color: "var(--text)", padding: "2px 5px",
+            }}
+          />
+          <button
+            className="btn"
+            style={{ fontSize: 10, padding: "2px 6px" }}
+            onClick={() => { onUpdateCaption(captionDraft); setEditingCaption(false); }}
+          >✓</button>
+        </div>
+      ) : (
+        <div
+          onClick={() => setEditingCaption(true)}
+          style={{
+            fontSize: 10, color: screenshot.caption ? "var(--text3)" : "var(--border2)",
+            marginTop: 4, cursor: "text", minHeight: 14, lineHeight: 1.3,
+          }}
+        >
+          {screenshot.caption || "Add caption…"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Screenshot upload button ───────────────────────────────────────────────────
+
+function ScreenshotUpload({ onUpload }: { onUpload: (file: File) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) { onUpload(file); e.target.value = ""; }
+        }}
+      />
+      <button
+        onClick={() => inputRef.current?.click()}
+        style={{
+          marginTop: 8, fontSize: 11, color: "var(--text3)",
+          background: "none", border: "1px dashed var(--border)",
+          borderRadius: "var(--radius-sm)", padding: "4px 12px",
+          cursor: "pointer",
+        }}
+      >
+        + Screenshot
+      </button>
+    </>
+  );
+}
+
 // ── Note editor ────────────────────────────────────────────────────────────────
 
 function NoteItem({
@@ -163,7 +465,7 @@ function NoteItem({
   );
 }
 
-// ── Notes panel (right sidebar, per focused section) ───────────────────────────
+// ── Notes panel ────────────────────────────────────────────────────────────────
 
 function NotesPanel({
   section,
@@ -207,7 +509,6 @@ function NotesPanel({
         />
       ))}
 
-      {/* Add note */}
       <textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -233,7 +534,7 @@ function NotesPanel({
   );
 }
 
-// ── Section row in focus mode ──────────────────────────────────────────────────
+// ── Section row ────────────────────────────────────────────────────────────────
 
 function FocusSectionRow({
   section,
@@ -241,12 +542,20 @@ function FocusSectionRow({
   isFocused,
   onFocus,
   onToggleComplete,
+  onDeleteResource,
+  onAddScreenshot,
+  onDeleteScreenshot,
+  onUpdateCaption,
 }: {
   section: FocusSection;
   images: CanvasImage[];
   isFocused: boolean;
   onFocus: () => void;
   onToggleComplete: () => void;
+  onDeleteResource: (resourceId: number) => void;
+  onAddScreenshot: (sectionId: number, file: File) => void;
+  onDeleteScreenshot: (screenshotId: number) => void;
+  onUpdateCaption: (screenshotId: number, caption: string) => void;
 }) {
   const isMain = section.level <= 1;
   const isSub = section.level === 2;
@@ -285,6 +594,11 @@ function FocusSectionRow({
         }}>
           {section.title}
         </span>
+        {section.body && (
+          <span style={{ fontSize: 9, color: "var(--text3)", flexShrink: 0 }}>
+            ~{estimateMins(section.body)}m
+          </span>
+        )}
         {hasNotes && (
           <span style={{
             fontSize: 10, color: "var(--amber)", fontWeight: 600,
@@ -295,9 +609,40 @@ function FocusSectionRow({
         )}
       </div>
 
-      <div style={{ paddingLeft: isMain ? 23 : 0 }}>
+      <div data-section-id={section.id} style={{ paddingLeft: isMain ? 23 : 0 }}>
         <MarkdownBody md={section.body} />
         <ImageStrip images={images} />
+
+        {/* External resources */}
+        {section.resources.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{
+              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+              letterSpacing: "0.08em", color: "var(--text3)", marginBottom: 6,
+            }}>
+              External Resources
+            </div>
+            {section.resources.map((res) => (
+              <ResourceCard key={res.id} resource={res} onDelete={() => onDeleteResource(res.id)} />
+            ))}
+          </div>
+        )}
+
+        {/* Screenshots */}
+        {section.screenshots.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            {section.screenshots.map((sc) => (
+              <ScreenshotCard
+                key={sc.id}
+                screenshot={sc}
+                onDelete={() => onDeleteScreenshot(sc.id)}
+                onUpdateCaption={(cap) => onUpdateCaption(sc.id, cap)}
+              />
+            ))}
+          </div>
+        )}
+
+        <ScreenshotUpload onUpload={(file) => onAddScreenshot(section.id, file)} />
       </div>
     </div>
   );
@@ -325,12 +670,10 @@ function TimerBar({
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      {/* Elapsed */}
       <div style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", color: over ? "var(--red)" : "var(--text)", fontWeight: 600, minWidth: 56 }}>
         {fmtTime(elapsedSeconds)}
       </div>
 
-      {/* Progress bar */}
       <div style={{ flex: 1, height: 4, background: "var(--bg3)", borderRadius: 99, overflow: "hidden" }}>
         <div style={{
           height: "100%", width: `${pct}%`,
@@ -339,12 +682,10 @@ function TimerBar({
         }} />
       </div>
 
-      {/* Remaining */}
       <div style={{ fontSize: 11, color: "var(--text3)", minWidth: 60, textAlign: "right" }}>
         {over ? `+${fmtTime(elapsedSeconds - budgetSecs)}` : `${fmtTime(remaining)} left`}
       </div>
 
-      {/* Budget input */}
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <input
           type="number"
@@ -360,7 +701,6 @@ function TimerBar({
         <span style={{ fontSize: 11, color: "var(--text3)" }}>min</span>
       </div>
 
-      {/* Play/pause */}
       <button
         onClick={onToggle}
         style={{
@@ -372,6 +712,118 @@ function TimerBar({
       >
         {running ? "⏸" : "▶"}
       </button>
+    </div>
+  );
+}
+
+// ── Session Picker ─────────────────────────────────────────────────────────────
+
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function SessionPicker({
+  courseCode,
+  initialChunkIds,
+  onResume,
+  onStartFresh,
+}: {
+  courseCode: string;
+  initialChunkIds: number[];
+  onResume: (session: FocusSession) => void;
+  onStartFresh: () => void;
+}) {
+  const { data: sessions = [], isLoading } = useQuery<FocusSession[]>({
+    queryKey: ["focus-sessions-picker", courseCode],
+    queryFn: () => listFocusSessions(courseCode),
+  });
+
+  // Skip picker if no prior sessions
+  useEffect(() => {
+    if (!isLoading && sessions.length === 0) onStartFresh();
+  }, [isLoading, sessions.length]);
+
+  if (isLoading || sessions.length === 0) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <div style={{ color: "var(--text3)", fontSize: 13 }}>Loading…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "var(--bg)", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", padding: "2rem",
+    }}>
+      <div style={{ maxWidth: 480, width: "100%" }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 4px", color: "var(--text)" }}>
+          Resume a session?
+        </h2>
+        <p style={{ fontSize: 13, color: "var(--text3)", margin: "0 0 20px" }}>
+          You have previous {courseCode} sessions. Pick one to continue or start fresh.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {sessions.slice(0, 5).map((s) => {
+            const elapsed = s.elapsed_seconds;
+            const pctDone = s.budget_minutes > 0
+              ? Math.min(100, Math.round((elapsed / (s.budget_minutes * 60)) * 100))
+              : 0;
+            return (
+              <button
+                key={s.id}
+                onClick={() => onResume(s)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  background: "var(--bg2)", border: "1px solid var(--border)",
+                  borderRadius: "var(--radius)", padding: "12px 14px",
+                  cursor: "pointer", textAlign: "left", width: "100%",
+                  transition: "border-color 0.15s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
+                    {s.label ?? `${s.chunk_ids.length} lecture${s.chunk_ids.length > 1 ? "s" : ""}`}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text3)" }}>
+                    {relativeDate(s.updated_at)} · {fmtTime(elapsed)} elapsed · {s.budget_minutes}m budget
+                  </div>
+                  {/* Mini progress bar */}
+                  <div style={{ height: 2, background: "var(--bg3)", borderRadius: 99, overflow: "hidden", marginTop: 6 }}>
+                    <div style={{
+                      height: "100%", width: `${pctDone}%`,
+                      background: pctDone >= 100 ? "var(--red)" : pctDone > 80 ? "var(--amber)" : "var(--accent)",
+                      borderRadius: 99,
+                    }} />
+                  </div>
+                </div>
+                <span style={{ fontSize: 12, color: "var(--accent)", flexShrink: 0 }}>Resume →</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          className="btn"
+          style={{ width: "100%", fontSize: 13, padding: "10px 0" }}
+          onClick={onStartFresh}
+        >
+          Start fresh with {initialChunkIds.length} lecture{initialChunkIds.length > 1 ? "s" : ""}
+        </button>
+      </div>
     </div>
   );
 }
@@ -391,6 +843,12 @@ export function FocusMode({
 }) {
   const qc = useQueryClient();
 
+  // Phase: pick = session picker, study = canvas
+  const [phase, setPhase] = useState<"pick" | "study">(existingSession ? "study" : "pick");
+  const [effectiveChunkIds, setEffectiveChunkIds] = useState<number[]>(
+    existingSession ? (existingSession.chunk_ids.length > 0 ? existingSession.chunk_ids : initialChunkIds) : initialChunkIds
+  );
+
   // Session state
   const [sessionId, setSessionId] = useState<number | null>(existingSession?.id ?? null);
   const [budgetMinutes, setBudgetMinutes] = useState(existingSession?.budget_minutes ?? 60);
@@ -398,6 +856,27 @@ export function FocusMode({
   const [timerRunning, setTimerRunning] = useState(true);
   const [focusedSection, setFocusedSection] = useState<FocusSection | null>(null);
   const [activeChunkId, setActiveChunkId] = useState<number | null>(existingSession?.last_chunk_id ?? initialChunkIds[0] ?? null);
+
+  const [rightTab, setRightTab] = useState<"notes" | "chat">("notes");
+
+  // Selection popover
+  const [selectionPopover, setSelectionPopover] = useState<{
+    text: string; sectionId: number; x: number; y: number;
+  } | null>(null);
+  const [popoverInstructions, setPopoverInstructions] = useState("");
+  const [popoverSearching, setPopoverSearching] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss popover on outside click
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setSelectionPopover(null);
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, []);
 
   // Timer
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -422,7 +901,7 @@ export function FocusMode({
     } else {
       const s = await createFocusSession({
         course_code: courseCode,
-        chunk_ids: initialChunkIds,
+        chunk_ids: effectiveChunkIds,
         budget_minutes: budgetMinutes,
       });
       setSessionId(s.id);
@@ -434,47 +913,119 @@ export function FocusMode({
     return () => clearInterval(interval);
   }, [saveSession]);
 
-  // Save on unmount
   useEffect(() => { return () => { saveSession(); }; }, [saveSession]);
 
   // Fetch chunks
   const { data: chunks = [], isLoading } = useQuery<FocusChunk[]>({
-    queryKey: ["focus-chunks", initialChunkIds.join(",")],
-    queryFn: () => fetchFocusChunks(initialChunkIds),
+    queryKey: ["focus-chunks", effectiveChunkIds.join(",")],
+    queryFn: () => fetchFocusChunks(effectiveChunkIds),
+    enabled: phase === "study",
   });
 
-  // Note mutations — optimistic update in query cache
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["focus-chunks", effectiveChunkIds.join(",")] });
+
+  // Note mutations
   const addNoteMutation = useMutation({
-    mutationFn: ({ sectionId, body }: { sectionId: number; body: string }) =>
-      addNote(sectionId, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["focus-chunks", initialChunkIds.join(",")] }),
+    mutationFn: ({ sectionId, body }: { sectionId: number; body: string }) => addNote(sectionId, body),
+    onSuccess: invalidate,
   });
 
   const updateNoteMutation = useMutation({
-    mutationFn: ({ noteId, body }: { noteId: number; body: string }) =>
-      updateNote(noteId, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["focus-chunks", initialChunkIds.join(",")] }),
+    mutationFn: ({ noteId, body }: { noteId: number; body: string }) => updateNote(noteId, body),
+    onSuccess: invalidate,
   });
 
   const deleteNoteMutation = useMutation({
     mutationFn: (noteId: number) => deleteNote(noteId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["focus-chunks", initialChunkIds.join(",")] }),
+    onSuccess: invalidate,
   });
 
   const sectionCompleteMutation = useMutation({
     mutationFn: ({ id, done }: { id: number; done: boolean }) => setSectionCompletion(id, done),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["focus-chunks", initialChunkIds.join(",")] }),
+    onSuccess: invalidate,
   });
 
   const chunkCompleteMutation = useMutation({
     mutationFn: ({ id, done }: { id: number; done: boolean }) => setChunkCompletion(id, done),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["focus-chunks", initialChunkIds.join(",")] }),
+    onSuccess: invalidate,
   });
+
+  // Resource mutations
+  const deleteResourceMutation = useMutation({
+    mutationFn: (resourceId: number) => deleteResource(resourceId),
+    onSuccess: invalidate,
+  });
+
+  // Screenshot mutations
+  const uploadScreenshotMutation = useMutation({
+    mutationFn: ({ sectionId, file }: { sectionId: number; file: File }) => uploadScreenshot(sectionId, file),
+    onSuccess: invalidate,
+  });
+
+  const deleteScreenshotMutation = useMutation({
+    mutationFn: (screenshotId: number) => deleteScreenshot(screenshotId),
+    onSuccess: invalidate,
+  });
+
+  const updateCaptionMutation = useMutation({
+    mutationFn: ({ id, caption }: { id: number; caption: string }) => updateScreenshotCaption(id, caption),
+    onSuccess: invalidate,
+  });
+
+  // Text selection → popover
+  function handleContentMouseUp() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+    const text = sel.toString().trim();
+    if (text.length < 5) return;
+
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    // Walk up DOM to find data-section-id
+    let node: Node | null = range.commonAncestorContainer;
+    while (node) {
+      if (node instanceof HTMLElement && node.dataset.sectionId) {
+        setSelectionPopover({
+          text,
+          sectionId: parseInt(node.dataset.sectionId),
+          x: rect.left + rect.width / 2,
+          y: rect.bottom + 8,
+        });
+        setPopoverInstructions("");
+        return;
+      }
+      node = node.parentNode;
+    }
+  }
 
   // Compute progress
   const allSections = chunks.flatMap((c) => c.sections.filter((s) => s.level <= 1));
   const doneSections = allSections.filter((s) => s.is_completed).length;
   const progressPct = allSections.length > 0 ? Math.round((doneSections / allSections.length) * 100) : 0;
+
+  // Session picker
+  if (phase === "pick") {
+    return (
+      <SessionPicker
+        courseCode={courseCode}
+        initialChunkIds={initialChunkIds}
+        onResume={(session) => {
+          const ids = session.chunk_ids.length > 0 ? session.chunk_ids : initialChunkIds;
+          setEffectiveChunkIds(ids);
+          setSessionId(session.id);
+          setBudgetMinutes(session.budget_minutes);
+          setElapsedSeconds(session.elapsed_seconds);
+          setActiveChunkId(session.last_chunk_id ?? ids[0] ?? null);
+          setPhase("study");
+        }}
+        onStartFresh={() => {
+          setEffectiveChunkIds(initialChunkIds);
+          setPhase("study");
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{
@@ -506,7 +1057,6 @@ export function FocusMode({
           )}
         </div>
 
-        {/* Progress */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
           <div style={{ width: 80, height: 4, background: "var(--bg3)", borderRadius: 99, overflow: "hidden" }}>
             <div style={{
@@ -520,7 +1070,6 @@ export function FocusMode({
           </span>
         </div>
 
-        {/* Timer */}
         <div style={{ flex: 1, maxWidth: 400, marginLeft: "auto" }}>
           <TimerBar
             budgetMinutes={budgetMinutes}
@@ -545,6 +1094,7 @@ export function FocusMode({
             const done = mainSecs.filter((s) => s.is_completed).length;
             const pct = mainSecs.length > 0 ? Math.round((done / mainSecs.length) * 100) : 0;
             const active = activeChunkId === c.id;
+            const totalMins = c.sections.reduce((sum, s) => sum + (s.body ? estimateMins(s.body) : 0), 0);
             return (
               <div key={c.id} style={{
                 display: "flex", alignItems: "stretch",
@@ -567,7 +1117,12 @@ export function FocusMode({
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ fontWeight: active ? 600 : 400, marginBottom: 4 }}>{c.title}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}>
+                    <span style={{ fontWeight: active ? 600 : 400, flex: 1, lineHeight: 1.3 }}>{c.title}</span>
+                    {totalMins > 0 && (
+                      <span style={{ fontSize: 9, color: "var(--text3)", flexShrink: 0 }}>~{totalMins}m</span>
+                    )}
+                  </div>
                   <div style={{ height: 2, background: "var(--bg3)", borderRadius: 99, overflow: "hidden" }}>
                     <div style={{
                       height: "100%", width: `${pct}%`,
@@ -582,11 +1137,13 @@ export function FocusMode({
         </div>
 
         {/* Center: content */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem 2rem" }}>
+        <div
+          style={{ flex: 1, overflowY: "auto", padding: "1.5rem 2rem" }}
+          onMouseUp={handleContentMouseUp}
+        >
           {isLoading && <div style={{ color: "var(--text3)", fontSize: 13 }}>Loading...</div>}
           {chunks.map((chunk) => (
             <div key={chunk.id} id={`chunk-${chunk.id}`} style={{ marginBottom: 40 }}>
-              {/* Lecture header */}
               <div style={{
                 display: "flex", alignItems: "center", gap: 10,
                 marginBottom: 20, paddingBottom: 12,
@@ -605,7 +1162,6 @@ export function FocusMode({
                 </span>
               </div>
 
-              {/* Sections */}
               {chunk.sections.map((section, idx) => (
                 <FocusSectionRow
                   key={section.section_key}
@@ -614,34 +1170,116 @@ export function FocusMode({
                   isFocused={focusedSection?.id === section.id}
                   onFocus={() => setFocusedSection(section)}
                   onToggleComplete={() => sectionCompleteMutation.mutate({ id: section.id, done: !section.is_completed })}
+                  onDeleteResource={(resourceId) => deleteResourceMutation.mutate(resourceId)}
+                  onAddScreenshot={(sectionId, file) => uploadScreenshotMutation.mutate({ sectionId, file })}
+                  onDeleteScreenshot={(screenshotId) => deleteScreenshotMutation.mutate(screenshotId)}
+                  onUpdateCaption={(screenshotId, caption) => updateCaptionMutation.mutate({ id: screenshotId, caption })}
                 />
               ))}
             </div>
           ))}
         </div>
 
-        {/* Right: notes panel */}
+        {/* Right: notes / chat panel */}
         <div style={{
           width: 280, minWidth: 280, borderLeft: "1px solid var(--border)",
           display: "flex", flexDirection: "column",
         }}>
+          {/* Tab header */}
           <div style={{
-            padding: "0.75rem 1rem", borderBottom: "1px solid var(--border)",
-            fontSize: 11, fontWeight: 700, letterSpacing: "0.07em",
-            textTransform: "uppercase", color: "var(--text3)",
+            display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0,
           }}>
-            Notes
+            {(["notes", "chat"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setRightTab(tab)}
+                style={{
+                  flex: 1, border: "none", background: "none", cursor: "pointer",
+                  padding: "8px 0", fontSize: 11, fontWeight: 700,
+                  letterSpacing: "0.07em", textTransform: "uppercase",
+                  color: rightTab === tab ? "var(--accent)" : "var(--text3)",
+                  borderBottom: rightTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+                  transition: "color 0.15s",
+                }}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
+
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <NotesPanel
-              section={focusedSection}
-              onAddNote={(sectionId, body) => addNoteMutation.mutate({ sectionId, body })}
-              onUpdateNote={(noteId, body) => updateNoteMutation.mutate({ noteId, body })}
-              onDeleteNote={(noteId) => deleteNoteMutation.mutate(noteId)}
-            />
+            {rightTab === "notes" ? (
+              <NotesPanel
+                section={focusedSection}
+                onAddNote={(sectionId, body) => addNoteMutation.mutate({ sectionId, body })}
+                onUpdateNote={(noteId, body) => updateNoteMutation.mutate({ noteId, body })}
+                onDeleteNote={(noteId) => deleteNoteMutation.mutate(noteId)}
+              />
+            ) : (
+              <ChatPanel
+                sessionId={sessionId}
+                focusedSection={focusedSection}
+              />
+            )}
           </div>
         </div>
       </div>
+
+      {/* Selection popover */}
+      {selectionPopover && (
+        <div
+          ref={popoverRef}
+          style={{
+            position: "fixed",
+            left: selectionPopover.x,
+            top: selectionPopover.y,
+            transform: "translateX(-50%)",
+            background: "var(--bg2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "10px 12px",
+            zIndex: 2000,
+            minWidth: 260,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{
+            fontSize: 11, color: "var(--text3)", marginBottom: 8,
+            fontStyle: "italic", lineHeight: 1.4,
+          }}>
+            "{selectionPopover.text.length > 80 ? selectionPopover.text.slice(0, 80) + "…" : selectionPopover.text}"
+          </div>
+          <input
+            placeholder="Optional guidance (e.g. 'focus on Python examples')"
+            value={popoverInstructions}
+            onChange={(e) => setPopoverInstructions(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setSelectionPopover(null)}
+            autoFocus
+            style={{
+              width: "100%", background: "var(--bg3)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)", color: "var(--text)", padding: "5px 8px",
+              fontSize: 12, marginBottom: 8, boxSizing: "border-box",
+            }}
+          />
+          <button
+            className="btn"
+            style={{ width: "100%", fontSize: 12 }}
+            disabled={popoverSearching}
+            onClick={async () => {
+              setPopoverSearching(true);
+              try {
+                await generateResources(selectionPopover.sectionId, selectionPopover.text, popoverInstructions);
+                invalidate();
+                setSelectionPopover(null);
+              } finally {
+                setPopoverSearching(false);
+              }
+            }}
+          >
+            {popoverSearching ? "Searching…" : "Find External Resources"}
+          </button>
+        </div>
+      )}
 
       <style>{`
         .canvas-md h1 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.4rem; color: var(--text); }

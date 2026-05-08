@@ -190,6 +190,8 @@ class HandoutSection(Base):
 
     chunk = relationship("HandoutChunk")
     notes = relationship("SectionNote", back_populates="section", cascade="all, delete-orphan", order_by="SectionNote.created_at")
+    resources = relationship("ExternalResource", cascade="all, delete-orphan", order_by="ExternalResource.created_at")
+    screenshots = relationship("SectionScreenshot", cascade="all, delete-orphan", order_by="SectionScreenshot.seq")
 
 
 class SectionNote(Base):
@@ -205,6 +207,34 @@ class SectionNote(Base):
     section = relationship("HandoutSection", back_populates="notes")
 
 
+class ExternalResource(Base):
+    """Sonnet-generated external resource attached to a section selection."""
+    __tablename__ = "external_resources"
+
+    id = Column(Integer, primary_key=True)
+    section_id = Column(Integer, ForeignKey("handout_sections.id"), nullable=False)
+    selected_text = Column(Text, nullable=False)          # text the user highlighted
+    instructions = Column(Text, nullable=True)            # optional guidance
+    resources = Column(Text, nullable=False)              # JSON: [{url, title, snippet}]
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    section = relationship("HandoutSection")
+
+
+class SectionScreenshot(Base):
+    """User-uploaded screenshot attached to a section."""
+    __tablename__ = "section_screenshots"
+
+    id = Column(Integer, primary_key=True)
+    section_id = Column(Integer, ForeignKey("handout_sections.id"), nullable=False)
+    file_path = Column(String(1000), nullable=False)
+    caption = Column(String(500), nullable=True)
+    seq = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    section = relationship("HandoutSection")
+
+
 class FocusSession(Base):
     """Persisted focus mode state — resumed on next visit."""
     __tablename__ = "focus_sessions"
@@ -218,6 +248,18 @@ class FocusSession(Base):
     last_chunk_id = Column(Integer, nullable=True)  # scroll position hint
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ChatMessage(Base):
+    """Chat message in a focus session, optionally scoped to a section."""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("focus_sessions.id"), nullable=False)
+    section_id = Column(Integer, ForeignKey("handout_sections.id"), nullable=True)
+    role = Column(String(10), nullable=False)   # user | assistant
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 class SyncRun(Base):

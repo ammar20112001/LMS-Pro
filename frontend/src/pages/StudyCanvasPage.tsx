@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FocusMode } from "./FocusMode";
 import {
@@ -9,6 +9,7 @@ import {
   setChunkCompletion,
   setSectionCompletion,
   listFocusSessions,
+  searchSections,
   triggerHandoutIngest,
   CanvasCourse,
   CanvasChunkSummary,
@@ -16,6 +17,7 @@ import {
   CanvasImage,
   CanvasSection,
   FocusSession,
+  SearchResult,
 } from "../api/client";
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -156,13 +158,16 @@ function SectionBlock({
   const isSub = section.level === 2;   // ### → subsection, no tick
 
   return (
-    <div style={{
-      marginBottom: isMain ? 20 : 10,
-      paddingLeft: isSub ? 14 : 0,
-      borderLeft: isSub ? "2px solid var(--border)" : "none",
-      opacity: section.is_completed ? 0.55 : 1,
-      transition: "opacity 0.2s",
-    }}>
+    <div
+      id={`section-${section.id}`}
+      style={{
+        marginBottom: isMain ? 20 : 10,
+        paddingLeft: isSub ? 14 : 0,
+        borderLeft: isSub ? "2px solid var(--border)" : "none",
+        opacity: section.is_completed ? 0.55 : 1,
+        transition: "opacity 0.2s",
+      }}
+    >
       {/* Section heading */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         {isMain && (
@@ -358,6 +363,12 @@ export function StudyCanvasPage() {
   const [focusChunkIds, setFocusChunkIds] = useState<number[]>([]);
   const [resumeSession, setResumeSession] = useState<FocusSession | null>(null);
 
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [pendingScrollSection, setPendingScrollSection] = useState<number | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
   const { data: courses = [], isLoading: coursesLoading } = useQuery({
     queryKey: ["canvas-courses"],
     queryFn: fetchCanvasCourses,
@@ -384,6 +395,35 @@ export function StudyCanvasPage() {
     refetchInterval: (query) =>
       (query.state.data as CanvasChunk | undefined)?.enrich_status === "enriching" ? 3000 : false,
   });
+
+  const { data: searchResults = [] } = useQuery<SearchResult[]>({
+    queryKey: ["section-search", searchQuery, selectedCourse],
+    queryFn: () => searchSections(searchQuery, selectedCourse ?? undefined),
+    enabled: searchQuery.trim().length >= 2,
+    staleTime: 10_000,
+  });
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Scroll to section after chunk loads
+  useEffect(() => {
+    if (chunk && pendingScrollSection !== null) {
+      const el = document.getElementById(`section-${pendingScrollSection}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setPendingScrollSection(null);
+      }
+    }
+  }, [chunk, pendingScrollSection]);
 
   const ingestMutation = useMutation({
     mutationFn: triggerHandoutIngest,
@@ -505,18 +545,96 @@ export function StudyCanvasPage() {
     <div className="page" style={{ maxWidth: "none", padding: 0, height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{
-        padding: "1.25rem 2rem 0.9rem", borderBottom: "1px solid var(--border)",
-        display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
+        padding: "0.9rem 2rem", borderBottom: "1px solid var(--border)",
+        display: "flex", alignItems: "center", gap: 16, flexShrink: 0,
       }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Study Canvas</h1>
-          <p style={{ color: "var(--text2)", fontSize: 13, marginTop: 2 }}>
-            Lecture handouts — section by section
-          </p>
+        <div style={{ flexShrink: 0 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Study Canvas</h1>
         </div>
+
+        {/* Search bar */}
+        <div ref={searchRef} style={{ flex: 1, maxWidth: 400, position: "relative" }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+            onFocus={() => setSearchOpen(true)}
+            placeholder={selectedCourse ? `Search ${selectedCourse} sections…` : "Search sections…"}
+            style={{
+              width: "100%", background: "var(--bg3)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius)", color: "var(--text)", padding: "6px 32px 6px 12px",
+              fontSize: 13, boxSizing: "border-box",
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+              style={{
+                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", cursor: "pointer",
+                color: "var(--text3)", fontSize: 14, lineHeight: 1,
+              }}
+            >✕</button>
+          )}
+
+          {/* Results dropdown */}
+          {searchOpen && searchQuery.trim().length >= 2 && searchResults.length > 0 && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+              background: "var(--bg2)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius)", boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              zIndex: 200, maxHeight: 360, overflowY: "auto",
+            }}>
+              {searchResults.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => {
+                    setSelectedCourse(r.course_code);
+                    setSelectedChunkId(r.chunk_id);
+                    setPendingScrollSection(r.id);
+                    setSearchOpen(false);
+                    setSearchQuery("");
+                  }}
+                  style={{
+                    width: "100%", textAlign: "left", background: "none", border: "none",
+                    padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid var(--border)",
+                    display: "block",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg3)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                      {r.title}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--text3)", flexShrink: 0 }}>
+                      {r.course_code} · {r.chunk_title.slice(0, 40)}
+                    </span>
+                  </div>
+                  {r.body_snippet && (
+                    <div style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.4 }}>
+                      {r.body_snippet.slice(0, 120)}…
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {searchOpen && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+              background: "var(--bg2)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius)", padding: "10px 12px",
+              fontSize: 12, color: "var(--text3)", zIndex: 200,
+            }}>
+              No results
+            </div>
+          )}
+        </div>
+
         <button
           className="btn btn--ghost"
-          style={{ fontSize: 12, padding: "0.4rem 0.9rem" }}
+          style={{ fontSize: 12, padding: "0.4rem 0.9rem", flexShrink: 0 }}
           onClick={() => ingestMutation.mutate()}
           disabled={ingestMutation.isPending}
         >

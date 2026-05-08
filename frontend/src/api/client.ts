@@ -280,8 +280,28 @@ export interface SectionNote {
   updated_at: string;
 }
 
+export interface ExternalResource {
+  id: number;
+  section_id: number;
+  selected_text: string;
+  instructions: string | null;
+  resources: { url: string; title: string; snippet: string }[];
+  created_at: string;
+}
+
+export interface SectionScreenshot {
+  id: number;
+  section_id: number;
+  url: string;
+  caption: string | null;
+  seq: number;
+  created_at: string;
+}
+
 export interface FocusSection extends CanvasSection {
   notes: SectionNote[];
+  resources: ExternalResource[];
+  screenshots: SectionScreenshot[];
 }
 
 export interface FocusChunk {
@@ -336,6 +356,62 @@ export const updateFocusSession = (sessionId: number, data: {
 
 export const deleteFocusSession = (sessionId: number): Promise<{ ok: boolean }> =>
   api.delete(`/api/focus/sessions/${sessionId}`).then((r) => r.data);
+
+export const generateResources = (sectionId: number, selectedText: string, instructions?: string): Promise<ExternalResource> =>
+  api.post(`/api/focus/sections/${sectionId}/resources`, { selected_text: selectedText, instructions: instructions ?? "" }).then((r) => r.data);
+
+export const deleteResource = (resourceId: number): Promise<{ ok: boolean }> =>
+  api.delete(`/api/focus/resources/${resourceId}`).then((r) => r.data);
+
+export const uploadScreenshot = (sectionId: number, file: File, caption?: string): Promise<SectionScreenshot> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (caption) formData.append("caption", caption);
+  return api.post(`/api/focus/sections/${sectionId}/screenshots`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  }).then((r) => r.data);
+};
+
+export const deleteScreenshot = (screenshotId: number): Promise<{ ok: boolean }> =>
+  api.delete(`/api/focus/screenshots/${screenshotId}`).then((r) => r.data);
+
+export const updateScreenshotCaption = (screenshotId: number, caption: string): Promise<SectionScreenshot> =>
+  api.patch(`/api/focus/screenshots/${screenshotId}/caption`, { body: caption }).then((r) => r.data);
+
+export interface ChatMessage {
+  id: number;
+  session_id: number;
+  section_id: number | null;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export const getChatMessages = (sessionId: number): Promise<ChatMessage[]> =>
+  api.get(`/api/focus/sessions/${sessionId}/messages`).then((r) => r.data);
+
+export const sendChatMessage = (sessionId: number, content: string, sectionId?: number): Promise<ChatMessage> =>
+  api.post(`/api/focus/sessions/${sessionId}/chat`, { content, section_id: sectionId ?? null }).then((r) => r.data);
+
+export const deleteChatMessage = (messageId: number): Promise<{ ok: boolean }> =>
+  api.delete(`/api/focus/messages/${messageId}`).then((r) => r.data);
+
+export interface SearchResult {
+  id: number;
+  title: string;
+  level: number;
+  section_key: string;
+  body_snippet: string;
+  chunk_id: number;
+  chunk_title: string;
+  lecture_no: number;
+  course_code: string;
+}
+
+export const searchSections = (q: string, courseCode?: string): Promise<SearchResult[]> =>
+  api.get("/api/study-canvas/search", {
+    params: { q, ...(courseCode ? { course_code: courseCode } : {}) },
+  }).then((r) => r.data);
 
 // ── Study Plan ─────────────────────────────────────────────────────────────────
 

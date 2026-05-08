@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import engine, Base
+from .db import engine, Base, setup_fts
 from .api import courses, items, sync, assignments
 from .api.courses import notes_router, study_router
 from .api.study_canvas import router as study_canvas_router
@@ -22,6 +22,8 @@ logging.getLogger("app.scraper").setLevel(logging.DEBUG)
 async def lifespan(app: FastAPI):
     # Create tables
     Base.metadata.create_all(bind=engine)
+    # Set up FTS5 search index (idempotent)
+    setup_fts()
     # Start background jobs
     scheduler.start()
     yield

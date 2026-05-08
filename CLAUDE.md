@@ -275,6 +275,35 @@ asyncio.run(run_sync())
 
 ---
 
+## Search Architecture
+
+### Current: SQLite FTS5 (BM25)
+
+- Virtual table `sections_fts` with porter stemmer + unicode61 tokenizer
+- Created on startup in `db.py:setup_fts()` — idempotent, safe to call every boot
+- Three SQLite triggers (`sections_fts_ai/ad/au`) keep the FTS index in sync with `handout_sections` automatically — no manual sync needed
+- Backfill on startup indexes any rows added before the triggers existed
+- Endpoint: `GET /api/study-canvas/search?q=&course_code=` — returns BM25-ranked results
+- FTS5 MATCH requires the literal table name in the WHERE clause, not an alias (`WHERE sections_fts MATCH :q`, not `WHERE sf MATCH :q`)
+- Query preprocessing: strip non-word chars, append `*` to each token for prefix matching
+
+### Planned upgrade: Semantic vector search
+
+Do **not** replace FTS5 with SQLite LIKE queries — LIKE is O(n) with no ranking. The upgrade path from FTS5 is to vector embeddings:
+
+**Options (ranked by fit for this project):**
+1. **Hybrid FTS5 + reranking** (recommended first step): use FTS5 for candidate retrieval (top 50), then rerank with a cross-encoder or embedding similarity
+2. **Local `sentence-transformers`** (`all-MiniLM-L6-v2`, 80MB): `pip install sentence-transformers`, store 384-dim float32 vectors in SQLite as BLOBs, cosine similarity in Python. No API cost. ~200ms per query on CPU.
+3. **FAISS index** (`faiss-cpu`): store embeddings in a flat FAISS index file at `~/.lms-pro/sections.faiss`, rebuild when sections change. Fastest at query time.
+4. **API-based**: Anthropic does **not** offer an embeddings API. Use OpenAI `text-embedding-3-small` ($0.02/1M tokens) or Cohere embed if API embeddings are preferred.
+
+**Implementation notes when upgrading:**
+- Embed `title + " " + body[:500]` per section — short enough to stay in one embedding, captures the key content
+- Re-embed after every `parse_chunk_sections()` call (triggered by enrichment pipeline)
+- Keep FTS5 as a fallback for keyword queries where semantic search underperforms
+
+---
+
 ## Git Rules
 
 - **Never add `Co-Authored-By: Claude` trailers** — commits are by the user only
